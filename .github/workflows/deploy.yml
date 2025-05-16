@@ -5,6 +5,9 @@ on:
     workflows: ["Sonarcloud", "Codecov"]
     types:
       - completed
+    branches:
+      - main
+      - staging
 
 jobs:
   deploy:

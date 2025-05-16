@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package transaksi_penjualan;
+
+// Import untuk timestamp
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Service untuk transaksi penjualan
+service TransaksiService {
+  // Membuat transaksi baru
+  rpc CreateTransaksi(TransaksiRequest) returns (TransaksiResponse) {}
+  
+  // Mendapatkan detail transaksi berdasarkan ID
+  rpc GetTransaksi(TransaksiId) returns (TransaksiResponse) {}
+  
+  // Mendapatkan daftar transaksi (dengan optional filtering)
+  rpc ListTransaksi(TransaksiFilter) returns (TransaksiList) {}
+  
+  // Mengubah status transaksi
+  rpc UpdateTransaksiStatus(UpdateStatusRequest) returns (TransaksiResponse) {}
+  
+  // Membatalkan transaksi
+  rpc CancelTransaksi(TransaksiId) returns (TransaksiResponse) {}
+  
+  // Stream untuk real-time updates transaksi
+  rpc WatchTransaksi(TransaksiId) returns (stream TransaksiEvent) {}
+}
+
+message TransaksiEvent {
+  enum EventType {
+    CREATED = 0;
+    UPDATED = 1;
+    STATUS_CHANGED = 2;
+    DELETED = 3;
+  }
+  
+  EventType event_type = 1;
+  TransaksiResponse transaksi = 2;
+}
+
+// Request untuk membuat transaksi baru
+message TransaksiRequest {
+  string customer_id = 1;
+  repeated ItemTransaksi items = 2;
+  string metode_pembayaran = 3;
+  string catatan = 4;
+}
+
+// Item dalam transaksi
+message ItemTransaksi {
+  string product_id = 1;
+  int32 quantity = 2;
+  double harga_satuan = 3;
+  double diskon = 4;
+}
+
+// ID Transaksi
+message TransaksiId {
+  string id = 1;
+}
+
+// Filter untuk pencarian transaksi
+message TransaksiFilter {
+  string customer_id = 1;
+  google.protobuf.Timestamp tanggal_mulai = 2;
+  google.protobuf.Timestamp tanggal_akhir = 3;
+  string status = 4;
+  int32 page = 5;
+  int32 limit = 6;
+}
+
+// Response transaksi
+message TransaksiResponse {
+  string id = 1;
+  string customer_id = 2;
+  string customer_name = 3;
+  repeated ItemTransaksi items = 4;
+  double total_harga = 5;
+  double total_diskon = 6;
+  double total_bayar = 7;
+  string metode_pembayaran = 8;
+  string status = 9;
+  string catatan = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// Daftar transaksi
+message TransaksiList {
+  repeated TransaksiResponse transaksi = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+// Request untuk update status
+message UpdateStatusRequest {
+  string id = 1;
+  string status = 2;
+}
+
+// Event transaksi untuk streaming
+message TransaksiEvent {
+  enum EventType {
+    CREATED = 0;
+    UPDATED = 1;
+    STATUS_CHANGED = 2;
+    DELETED = 3;
+  }
+  
+  EventType event_type = 1;
+  TransaksiResponse transaksi = 2;
+}
