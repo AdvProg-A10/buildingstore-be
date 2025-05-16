@@ -1,7 +1,0 @@
-CREATE TABLE IF NOT EXISTS pelanggan (
-    id SERIAL PRIMARY KEY,
-    nama VARCHAR(255) NOT NULL,
-    alamat VARCHAR(255) NOT NULL,
-    no_telp VARCHAR(20) NOT NULL,
-    tanggal_gabung VARCHAR(100) NOT NULL
-);

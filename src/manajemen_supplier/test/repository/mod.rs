@@ -1,2 +1,0 @@
-pub mod supplier_repository_impl_test;
-pub mod supplier_transaction_repository_impl_test;

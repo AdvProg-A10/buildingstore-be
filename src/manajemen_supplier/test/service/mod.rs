@@ -1,3 +1,0 @@
-pub mod supplier_service_impl_test;
-pub mod supplier_dispatcher_test;
-pub mod supplier_transaction_logger_test;

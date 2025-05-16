@@ -2,14 +2,8 @@ name: Sonarcloud
 
 on:
   push:
-    branches:
-      - main
-      - staging
+    branches: [ main ]
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-      - staging
 
 env:
   CARGO_TERM_COLOR: always
