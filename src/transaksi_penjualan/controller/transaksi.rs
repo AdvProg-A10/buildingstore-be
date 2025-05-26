@@ -5,10 +5,17 @@ use rocket::serde::json::Json;
 use sqlx::{Any, Pool};
 use autometrics::autometrics;
 
-use crate::auth::guards::auth::AuthenticatedUser;
 use crate::transaksi_penjualan::model::transaksi::Transaksi;
 use crate::transaksi_penjualan::model::detail_transaksi::DetailTransaksi;
 use crate::transaksi_penjualan::service::transaksi::{TransaksiService, TransaksiSearchParams};
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct ApiResponse<T> {
+    pub success: bool,
+    pub message: String,
+    pub data: Option<T>,
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -19,7 +26,6 @@ pub struct Response {
 #[autometrics]
 #[get("/?<sort>&<filter>&<keyword>&<status>&<id_pelanggan>&<page>&<limit>")]
 pub async fn get_all_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     sort: Option<String>, 
     filter: Option<String>, 
@@ -55,7 +61,6 @@ pub async fn get_all_transaksi(
 #[autometrics]
 #[post("/", data = "<request>")]
 pub async fn create_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     request: Json<crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest>
 ) -> Result<Json<Response>, (Status, Json<Response>)> {
@@ -85,7 +90,6 @@ pub async fn create_transaksi(
 #[autometrics]
 #[get("/<id>")]
 pub async fn get_transaksi_by_id(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32 
 ) -> Result<Json<Transaksi>, Status> {
@@ -98,7 +102,6 @@ pub async fn get_transaksi_by_id(
 #[autometrics]
 #[patch("/<id>", data = "<transaksi>")]
 pub async fn update_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32,
     transaksi: Json<Transaksi>
@@ -130,7 +133,6 @@ pub async fn update_transaksi(
 #[autometrics]
 #[delete("/<id>")]
 pub async fn delete_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> (Status, Json<Response>) {
@@ -155,7 +157,6 @@ pub async fn delete_transaksi(
 #[autometrics]
 #[put("/<id>/complete")]
 pub async fn complete_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> (Status, Json<Response>) {
@@ -180,7 +181,6 @@ pub async fn complete_transaksi(
 #[autometrics]
 #[put("/<id>/cancel")]
 pub async fn cancel_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> (Status, Json<Response>) {
@@ -205,7 +205,6 @@ pub async fn cancel_transaksi(
 #[autometrics]
 #[get("/<id_transaksi>/detail")]
 pub async fn get_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32
 ) -> Result<Json<Vec<DetailTransaksi>>, Status> {
@@ -218,7 +217,6 @@ pub async fn get_detail_transaksi(
 #[autometrics]
 #[post("/<id_transaksi>/detail", data = "<detail>")]
 pub async fn add_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32,
     detail: Json<DetailTransaksi>
@@ -250,7 +248,6 @@ pub async fn add_detail_transaksi(
 #[autometrics]
 #[patch("/<id_transaksi>/detail/<id_detail>", data = "<detail>")]
 pub async fn update_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32,
     id_detail: i32,
@@ -283,7 +280,6 @@ pub async fn update_detail_transaksi(
 #[autometrics]
 #[delete("/<id_transaksi>/detail/<id_detail>")]
 pub async fn delete_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32,
     id_detail: i32
@@ -309,7 +305,6 @@ pub async fn delete_detail_transaksi(
 #[autometrics]
 #[get("/<id>/full")]
 pub async fn get_transaksi_with_details(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> Result<Json<crate::transaksi_penjualan::dto::transaksi_request::TransaksiWithDetailsResponse>, Status> {
@@ -352,6 +347,7 @@ pub async fn validate_product_stock(
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,12 +372,241 @@ mod tests {
 
         rocket::build()
             .manage(db.clone())
-            .mount("/api/transaksi", routes![
+            .mount("/", routes![
                 get_all_transaksi, create_transaksi, get_transaksi_by_id, 
                 update_transaksi, delete_transaksi, complete_transaksi, cancel_transaksi,
                 get_detail_transaksi, add_detail_transaksi, update_detail_transaksi, delete_detail_transaksi,
                 get_transaksi_with_details, validate_product_stock
             ])
+    }
+
+    #[async_test]
+    async fn test_create_transaksi_with_validation() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
+            id_pelanggan: 1,
+            nama_pelanggan: "Castorice".to_string(),
+            catatan: Some("Test transaction".to_string()),
+            detail_transaksi: vec![
+                crate::transaksi_penjualan::dto::transaksi_request::CreateDetailTransaksiRequest {
+                    id_produk: 1,
+                    nama_produk: "Contoh Produk".to_string(),
+                    harga_satuan: 10000.0,
+                    jumlah: 2,
+                },
+            ],
+        };
+
+        let response = client.post(uri!(super::create_transaksi))
+            .json(&new_transaksi_request)
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::Ok);
+        let body: ApiResponse<Transaksi> = response.into_json().await.unwrap();
+        assert!(body.success);
+        assert!(body.data.is_some());
+        if let Some(transaksi) = body.data {
+            assert_eq!(transaksi.nama_pelanggan, new_transaksi_request.nama_pelanggan);
+            assert!(transaksi.total_harga > 0.0);
+        }
+    }
+
+    #[async_test]
+    async fn test_get_all_transaksi() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let response = client.get("/transaksi").dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+        
+        let body: ApiResponse<crate::transaksi_penjualan::service::transaksi::TransaksiSearchResult> = response.into_json().await.unwrap();
+        assert!(body.success);
+    }
+
+    #[async_test]
+    async fn test_validate_product_stock() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let products = vec![
+            crate::transaksi_penjualan::dto::transaksi_request::CreateDetailTransaksiRequest {
+                id_produk: 1,
+                nama_produk: "Valid Product".to_string(),
+                harga_satuan: 100000.0,
+                jumlah: 50,
+            },
+        ];
+
+        let response = client.post(uri!(super::validate_product_stock))
+            .json(&products)
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::Ok);
+    }
+
+    #[async_test]
+    async fn test_get_transaksi_with_details() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
+            id_pelanggan: 1,
+            nama_pelanggan: "Test Full Details".to_string(),
+            catatan: Some("Test transaction with details".to_string()),
+            detail_transaksi: vec![
+                crate::transaksi_penjualan::dto::transaksi_request::CreateDetailTransaksiRequest {
+                    id_produk: 1,
+                    nama_produk: "Test Product".to_string(),
+                    harga_satuan: 50000.0,
+                    jumlah: 2,
+                },
+            ],
+        };
+
+        let create_response = client.post(uri!(super::create_transaksi))
+            .json(&new_transaksi_request)
+            .dispatch()
+            .await;
+
+        assert_eq!(create_response.status(), Status::Ok);
+        let create_body: ApiResponse<Transaksi> = create_response.into_json().await.unwrap();
+        let created_transaksi = create_body.data.unwrap();
+
+        let get_response = client.get(format!("/transaksi/{}/full", created_transaksi.id)).dispatch().await;
+        assert_eq!(get_response.status(), Status::Ok);
+
+        let get_body: ApiResponse<crate::transaksi_penjualan::dto::transaksi_request::TransaksiWithDetailsResponse> = get_response.into_json().await.unwrap();
+        assert!(get_body.success);
+        
+        if let Some(full_transaksi) = get_body.data {
+            assert_eq!(full_transaksi.id, created_transaksi.id);
+            assert_eq!(full_transaksi.nama_pelanggan, "Test Full Details");
+            assert!(!full_transaksi.detail_transaksi.is_empty());
+        }
+    }
+
+    #[async_test]
+    async fn test_transaksi_state_transitions() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
+            id_pelanggan: 1,
+            nama_pelanggan: "State Test".to_string(),
+            catatan: None,
+            detail_transaksi: vec![
+                crate::transaksi_penjualan::dto::transaksi_request::CreateDetailTransaksiRequest {
+                    id_produk: 1,
+                    nama_produk: "State Test Product".to_string(),
+                    harga_satuan: 100000.0,
+                    jumlah: 1,
+                },
+            ],
+        };
+
+        let create_response = client.post(uri!(super::create_transaksi))
+            .json(&new_transaksi_request)
+            .dispatch()
+            .await;
+
+        let create_body: ApiResponse<Transaksi> = create_response.into_json().await.unwrap();
+        let created_transaksi = create_body.data.unwrap();
+
+        let complete_response = client.put(format!("/transaksi/{}/complete", created_transaksi.id)).dispatch().await;
+        assert_eq!(complete_response.status(), Status::Ok);
+
+        let complete_body: ApiResponse<Transaksi> = complete_response.into_json().await.unwrap();
+        if let Some(completed_transaksi) = complete_body.data {
+            assert_eq!(completed_transaksi.status.to_string(), "SELESAI");
+        }
+
+        let mut update_transaksi = created_transaksi.clone();
+        update_transaksi.nama_pelanggan = "Updated Name".to_string();
+
+        let update_response = client.patch(format!("/transaksi/{}", created_transaksi.id))
+            .json(&update_transaksi)
+            .dispatch()
+            .await;
+
+        assert_eq!(update_response.status(), Status::Forbidden);
+    }
+
+    #[async_test]
+    async fn test_detail_transaksi_crud() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
+            id_pelanggan: 1,
+            nama_pelanggan: "Detail CRUD Test".to_string(),
+            catatan: None,
+            detail_transaksi: vec![
+                crate::transaksi_penjualan::dto::transaksi_request::CreateDetailTransaksiRequest {
+                    id_produk: 1,
+                    nama_produk: "Initial Product".to_string(),
+                    harga_satuan: 50000.0,
+                    jumlah: 1,
+                },
+            ],
+        };
+
+        let create_response = client.post(uri!(super::create_transaksi))
+            .json(&new_transaksi_request)
+            .dispatch()
+            .await;
+
+        let create_body: ApiResponse<Transaksi> = create_response.into_json().await.unwrap();
+        let created_transaksi = create_body.data.unwrap();
+
+        let get_details_response = client.get(format!("/transaksi/{}/detail", created_transaksi.id)).dispatch().await;
+        assert_eq!(get_details_response.status(), Status::Ok);
+
+        let get_details_body: ApiResponse<Vec<DetailTransaksi>> = get_details_response.into_json().await.unwrap();
+        assert!(get_details_body.success);
+        
+        if let Some(details) = get_details_body.data {
+            assert_eq!(details.len(), 1);
+            
+            let mut detail_to_update = details[0].clone();
+            detail_to_update.update_jumlah(3);
+
+            let update_detail_response = client.patch(format!("/transaksi/{}/detail/{}", created_transaksi.id, detail_to_update.id))
+                .json(&detail_to_update)
+                .dispatch()
+                .await;
+
+            assert_eq!(update_detail_response.status(), Status::Ok);
+
+            let delete_detail_response = client.delete(format!("/transaksi/{}/detail/{}", created_transaksi.id, detail_to_update.id)).dispatch().await;
+            assert_eq!(delete_detail_response.status(), Status::Ok);
+        }
+    }
+
+    #[async_test]
+    async fn test_error_handling() {
+        let rocket = setup().await;
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        let response = client.get("/transaksi/99999").dispatch().await;
+        assert_eq!(response.status(), Status::NotFound);
+
+        let invalid_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
+            id_pelanggan: 1,
+            nama_pelanggan: "".to_string(), 
+            catatan: None,
+            detail_transaksi: vec![],       
+        };
+
+        let response = client.post(uri!(super::create_transaksi))
+            .json(&invalid_request)
+            .dispatch()
+            .await;
+
+        assert_eq!(response.status(), Status::BadRequest);
     }
 
     #[async_test]

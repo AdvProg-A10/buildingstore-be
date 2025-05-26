@@ -81,9 +81,7 @@ impl TransaksiRepository {
         Ok(())
     }
 
-    pub async fn get_all_transaksi(mut db: PoolConnection<Any>) -> Result<Vec<Transaksi>, sqlx::Error> {
-        println!("🔍 Repository: Executing get_all_transaksi query with NUMERIC -> TEXT conversion");
-        
+    pub async fn get_all_transaksi(mut db: PoolConnection<Any>) -> Result<Vec<Transaksi>, sqlx::Error> {        
         let rows = sqlx::query("
                 SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
                        total_harga::text as total_harga_str, status, catatan
@@ -92,25 +90,19 @@ impl TransaksiRepository {
             ")
             .fetch_all(&mut *db)
             .await?;
-        
-        println!("📊 Repository: Found {} rows", rows.len());
-        
+                
         let mut transaksi_list = Vec::new();
-        for (i, row) in rows.into_iter().enumerate() {
+        for (_i, row) in rows.into_iter().enumerate() {
             match Self::parse_row_to_transaksi(row) {
                 Ok(transaksi) => {
-                    println!("✅ Repository: Parsed transaksi {}: ID={}, Name={}, Total={}", 
-                             i, transaksi.id, transaksi.nama_pelanggan, transaksi.total_harga);
                     transaksi_list.push(transaksi);
                 }
                 Err(e) => {
-                    println!("❌ Repository: Error parsing row {}: {:?}", i, e);
                     return Err(e);
                 }
             }
         }
         
-        println!("✅ Repository: Successfully parsed {} transaksi", transaksi_list.len());
         Ok(transaksi_list)
     }
 
@@ -240,8 +232,6 @@ impl TransaksiRepository {
     }
     
     fn parse_row_to_transaksi(row: AnyRow) -> Result<Transaksi, sqlx::Error> {
-        println!("🔧 Parsing transaksi row with string conversion...");
-        
         let id: i32 = row.try_get("id")?;
         let id_pelanggan: i32 = row.try_get("id_pelanggan")?;
         let nama_pelanggan: String = row.try_get("nama_pelanggan")?;
@@ -249,7 +239,6 @@ impl TransaksiRepository {
         
         let total_harga_str: String = row.try_get("total_harga_str")?;
         let total_harga: f64 = total_harga_str.parse::<f64>().map_err(|e| {
-            println!("❌ Error parsing total_harga '{}': {:?}", total_harga_str, e);
             sqlx::Error::ColumnDecode { 
                 index: "total_harga_str".to_string(), 
                 source: Box::new(e) 
@@ -271,9 +260,6 @@ impl TransaksiRepository {
         transaksi.id = id;
         transaksi.tanggal_transaksi = tanggal_transaksi;
         transaksi.status = status;
-
-        println!("✅ Successfully parsed transaksi: ID={}, Name={}, Total={}", 
-                 transaksi.id, transaksi.nama_pelanggan, transaksi.total_harga);
 
         Ok(transaksi)
     }
@@ -316,7 +302,7 @@ impl TransaksiRepository {
 mod test {
     use super::*;
     use sqlx::any::install_default_drivers;
-    use sqlx::{Any, Pool};  
+    use sqlx::{Any, Pool};
     use rocket::async_test;
 
     async fn setup() -> Pool<Any> {
@@ -337,6 +323,106 @@ mod test {
     }
 
     #[async_test]
+    async fn test_create_transaksi() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            1,
+            "Castorice".to_string(),
+            150000.0,
+            Some("Test transaction".to_string()),
+        );
+        let created_transaksi = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+
+        assert_eq!(created_transaksi.id_pelanggan, 1);
+        assert_eq!(created_transaksi.nama_pelanggan, "Castorice");
+        assert_eq!(created_transaksi.total_harga, 150000.0);
+        assert_eq!(created_transaksi.status, StatusTransaksi::MasihDiproses);
+    }
+
+    #[async_test]
+    async fn test_get_transaksi_by_id() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            2,
+            "Tribbie".to_string(),
+            200000.0,
+            None,
+        );
+        let created_transaksi = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+
+        let fetched_transaksi = TransaksiRepository::get_transaksi_by_id(db.acquire().await.unwrap(), created_transaksi.id).await.unwrap();
+
+        assert_eq!(fetched_transaksi.id_pelanggan, 2);
+        assert_eq!(fetched_transaksi.nama_pelanggan, "Tribbie");
+        assert_eq!(fetched_transaksi.total_harga, 200000.0);
+    }
+
+    #[async_test]
+    async fn test_create_detail_transaksi() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            1,
+            "Hyacine".to_string(),
+            500000.0,
+            None,
+        );
+        let created_transaksi = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+
+        let detail = DetailTransaksi::new(
+            created_transaksi.id,
+            101,
+            15000000.0,
+            1,
+        );
+        let created_detail = TransaksiRepository::create_detail_transaksi(db.acquire().await.unwrap(), &detail).await.unwrap();
+
+        assert_eq!(created_detail.id_transaksi, created_transaksi.id);
+        assert_eq!(created_detail.id_produk, 101);
+        assert_eq!(created_detail.subtotal, 15000000.0);
+    }
+
+    #[async_test]
+    async fn test_get_all_transaksi() {
+        let db = setup().await;
+
+        let transaksi1 = Transaksi::new(1, "Alice".to_string(), 100000.0, None);
+        let transaksi2 = Transaksi::new(2, "Bob".to_string(), 200000.0, None);
+
+        TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi1).await.unwrap();
+        TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi2).await.unwrap();
+
+        let all_transaksi = TransaksiRepository::get_all_transaksi(db.acquire().await.unwrap()).await.unwrap();
+        
+        assert_eq!(all_transaksi.len(), 2);
+        assert!(all_transaksi.iter().any(|t| t.nama_pelanggan == "Alice"));
+        assert!(all_transaksi.iter().any(|t| t.nama_pelanggan == "Bob"));
+    }
+
+    #[async_test]
+    async fn test_simple_data_types() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            99,
+            "Data Type Test".to_string(),
+            999.99,
+            Some("Testing simple data types".to_string()),
+        );
+
+        let created = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+        
+        assert!(created.id > 0);
+        assert_eq!(created.id_pelanggan, 99);
+        assert_eq!(created.total_harga, 999.99);
+        assert!(!created.tanggal_transaksi.is_empty());
+        
+        println!("Created transaksi with simple data types: {:?}", created);
+    }
+
+    #[async_test]
     async fn test_numeric_string_conversion() {
         let db = setup().await;
 
@@ -353,7 +439,6 @@ mod test {
         assert_eq!(created.id_pelanggan, 99);
         assert_eq!(created.nama_pelanggan, "Numeric Test");
         assert!((created.total_harga - 1234.56).abs() < 0.01);
-        
-        println!("✅ Numeric string conversion test passed");
+    
     }
 }
