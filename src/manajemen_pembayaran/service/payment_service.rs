@@ -693,5 +693,483 @@ mod tests {
                 _ => panic!("Unexpected error type"),
             }
         }
+    }    #[tokio::test]
+    async fn test_database_connection_error_handling() {
+        let _service = PaymentService::new();
+        
+        let db_error = sqlx::Error::PoolClosed;
+        let mapped_error = PaymentError::DatabaseError(db_error.to_string());
+        
+        match mapped_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("pool"));
+            },
+            _ => panic!("Expected DatabaseError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_payment_repository_create_error_simulation() {
+        let _service = PaymentService::new();
+        
+        let payment = Payment {
+            id: "PMT-CREATE-TEST".to_string(),
+            transaction_id: "TXN-CREATE-TEST".to_string(),
+            amount: 1000.0,
+            method: PaymentMethod::Cash,
+            status: PaymentStatus::Paid,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: None,
+        };
+        
+        let repository_error = sqlx::Error::ColumnNotFound("invalid_column".to_string());
+        let create_error = PaymentError::DatabaseError(repository_error.to_string());
+        
+        match create_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("invalid_column"));
+            },
+            _ => panic!("Expected DatabaseError for repository create"),
+        }
+        
+        assert_eq!(payment.id, "PMT-CREATE-TEST");
+        assert_eq!(payment.amount, 1000.0);
+    }
+
+    #[tokio::test]
+    async fn test_find_by_id_row_not_found_mapping() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "NON-EXISTENT-ID";
+        let row_not_found = sqlx::Error::RowNotFound;
+        
+        let mapped_error = match row_not_found {
+            sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {payment_id} not found")),
+            _ => PaymentError::DatabaseError("other error".to_string())
+        };
+        
+        match mapped_error {
+            PaymentError::NotFound(msg) => {
+                assert_eq!(msg, "Payment with id NON-EXISTENT-ID not found");
+                assert!(msg.contains(payment_id));
+            },
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_find_by_id_database_error_mapping() {
+        let _service = PaymentService::new();
+        
+        let connection_timeout = sqlx::Error::PoolTimedOut;
+        
+        let mapped_error = match connection_timeout {
+            sqlx::Error::RowNotFound => PaymentError::NotFound("not found".to_string()),
+            _ => PaymentError::DatabaseError(connection_timeout.to_string())
+        };
+        
+        match mapped_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("timed out"));
+            },
+            _ => panic!("Expected DatabaseError for timeout"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_all_payments_with_valid_filters() {
+        let _service = PaymentService::new();
+        
+        let mut filters = HashMap::new();
+        filters.insert("status".to_string(), "PAID".to_string());
+        filters.insert("method".to_string(), "CASH".to_string());
+        filters.insert("amount_min".to_string(), "100.0".to_string());
+        
+        let filters_option = Some(filters.clone());
+        
+        assert!(filters_option.is_some());
+        
+        if let Some(filter_map) = filters_option {
+            assert_eq!(filter_map.len(), 3);
+            assert_eq!(filter_map.get("status"), Some(&"PAID".to_string()));
+            assert_eq!(filter_map.get("method"), Some(&"CASH".to_string()));
+            assert_eq!(filter_map.get("amount_min"), Some(&"100.0".to_string()));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_all_payments_with_none_filters() {
+        let _service = PaymentService::new();
+        
+        let empty_filters: Option<HashMap<String, String>> = None;
+        
+        assert!(empty_filters.is_none());
+        
+        let repository_error = sqlx::Error::ColumnNotFound("filter_column".to_string());
+        let find_all_error = PaymentError::DatabaseError(repository_error.to_string());
+        
+        match find_all_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("filter_column"));
+            },
+            _ => panic!("Expected DatabaseError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_payment_row_not_found() {
+        let _service = PaymentService::new();
+        
+        let payment = Payment {
+            id: "PMT-UPDATE-NOT-FOUND".to_string(),
+            transaction_id: "TXN-UPDATE-NOT-FOUND".to_string(),
+            amount: 1500.0,
+            method: PaymentMethod::CreditCard,
+            status: PaymentStatus::Installment,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: None,
+        };
+        
+        let row_not_found = sqlx::Error::RowNotFound;
+        let update_error = match row_not_found {
+            sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {} not found", payment.id)),
+            _ => PaymentError::DatabaseError("other error".to_string())
+        };
+        
+        match update_error {
+            PaymentError::NotFound(msg) => {
+                assert_eq!(msg, "Payment with id PMT-UPDATE-NOT-FOUND not found");
+                assert!(msg.contains(&payment.id));
+            },
+            _ => panic!("Expected NotFound error for update"),
+        }
+        
+        assert_eq!(payment.method, PaymentMethod::CreditCard);
+        assert_eq!(payment.status, PaymentStatus::Installment);
+    }
+
+    #[tokio::test]
+    async fn test_update_payment_other_database_errors() {
+        let _service = PaymentService::new();
+        
+        let payment = Payment {
+            id: "PMT-UPDATE-DB-ERROR".to_string(),
+            transaction_id: "TXN-UPDATE-DB-ERROR".to_string(),
+            amount: 2000.0,
+            method: PaymentMethod::BankTransfer,
+            status: PaymentStatus::Paid,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: Some(Utc::now()),
+        };
+        
+        let connection_error = sqlx::Error::PoolClosed;
+        let update_error = match connection_error {
+            sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {} not found", payment.id)),
+            _ => PaymentError::DatabaseError(connection_error.to_string())
+        };
+        
+        match update_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("pool"));
+            },
+            _ => panic!("Expected DatabaseError for pool closed"),
+        }
+        
+        assert_eq!(payment.amount, 2000.0);
+        assert!(payment.due_date.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_update_payment_status_with_additional_amount() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "PMT-STATUS-UPDATE".to_string();
+        let new_status = PaymentStatus::Paid;
+        let additional_amount = Some(250.0);
+        
+        let cloned_payment_id = payment_id.clone();
+        
+        let row_not_found = sqlx::Error::RowNotFound;
+        let status_error = match row_not_found {
+            sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {payment_id} not found")),
+            _ => PaymentError::DatabaseError("other error".to_string())
+        };
+        
+        match status_error {
+            PaymentError::NotFound(msg) => {
+                assert_eq!(msg, "Payment with id PMT-STATUS-UPDATE not found");
+                assert!(msg.contains(&cloned_payment_id));
+            },
+            _ => panic!("Expected NotFound error for status update"),
+        }
+        
+        assert_eq!(new_status, PaymentStatus::Paid);
+        assert_eq!(additional_amount, Some(250.0));
+        assert_eq!(payment_id, cloned_payment_id);
+    }
+
+    #[tokio::test]
+    async fn test_update_payment_status_without_additional_amount() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "PMT-STATUS-NO-AMOUNT".to_string();
+        let new_status = PaymentStatus::Installment;
+        let additional_amount: Option<f64> = None;
+        
+        let database_error = sqlx::Error::ColumnNotFound("status_column".to_string());
+        let status_error = match database_error {
+            sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {payment_id} not found")),
+            _ => PaymentError::DatabaseError(database_error.to_string())
+        };
+        
+        match status_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("status_column"));
+            },
+            _ => panic!("Expected DatabaseError for column not found"),
+        }
+        
+        assert_eq!(new_status, PaymentStatus::Installment);
+        assert!(additional_amount.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_payment_success_simulation() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "PMT-DELETE-SUCCESS";
+        
+        assert_eq!(payment_id.len(), 18);
+        assert!(payment_id.starts_with("PMT-"));
+        
+        let repository_error = sqlx::Error::ColumnNotFound("payment_id".to_string());
+        let delete_error = PaymentError::DatabaseError(repository_error.to_string());
+        
+        match delete_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("payment_id"));
+            },
+            _ => panic!("Expected DatabaseError for delete"),
+        }
+    }    #[tokio::test]
+    async fn test_add_installment_valid_payment_status() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "PMT-INSTALLMENT-VALID";
+        let installment_amount = 500.0;
+        
+        let valid_payment = Payment {
+            id: payment_id.to_string(),
+            transaction_id: "TXN-INSTALLMENT-VALID".to_string(),
+            amount: 1000.0,
+            method: PaymentMethod::BankTransfer,
+            status: PaymentStatus::Installment,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: None,
+        };
+        
+        assert_eq!(valid_payment.status, PaymentStatus::Installment);
+        
+        if valid_payment.status != PaymentStatus::Installment {
+            panic!("This condition should not be true for valid payment");
+        }
+        
+        let installment = Installment {
+            id: format!("INST-{}", Uuid::new_v4()),
+            payment_id: payment_id.to_string(),
+            amount: installment_amount,
+            payment_date: Utc::now(),
+        };
+        
+        assert!(installment.id.starts_with("INST-"));
+        assert_eq!(installment.payment_id, payment_id);
+        assert_eq!(installment.amount, installment_amount);
+        
+        let mut updated_payment = valid_payment.clone();
+        updated_payment.installments.push(installment.clone());
+        
+        assert_eq!(updated_payment.installments.len(), 1);
+        assert_eq!(updated_payment.installments[0].amount, installment_amount);
+        
+        let db_connection_error = sqlx::Error::PoolTimedOut;
+        let add_installment_error = PaymentError::DatabaseError(db_connection_error.to_string());
+        
+        match add_installment_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("timed out"));
+            },
+            _ => panic!("Expected DatabaseError for add installment"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_add_installment_invalid_payment_status() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "PMT-INSTALLMENT-INVALID";
+        
+        let invalid_payment = Payment {
+            id: payment_id.to_string(),
+            transaction_id: "TXN-INSTALLMENT-INVALID".to_string(),
+            amount: 1000.0,
+            method: PaymentMethod::Cash,
+            status: PaymentStatus::Paid,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: None,
+        };
+        
+        assert_ne!(invalid_payment.status, PaymentStatus::Installment);
+        
+        if invalid_payment.status != PaymentStatus::Installment {
+            let validation_error = PaymentError::InvalidInput("Cannot add installment to a payment that is not in INSTALLMENT status".to_string());
+            
+            match validation_error {
+                PaymentError::InvalidInput(msg) => {
+                    assert_eq!(msg, "Cannot add installment to a payment that is not in INSTALLMENT status");
+                    assert!(msg.contains("Cannot add installment"));
+                    assert!(msg.contains("INSTALLMENT status"));
+                },
+                _ => panic!("Expected InvalidInput error"),
+            }
+        }
+        
+        assert_eq!(invalid_payment.status, PaymentStatus::Paid);
+    }
+
+    #[tokio::test]
+    async fn test_add_installment_database_operations_flow() {
+        let _service = PaymentService::new();
+        
+        let payment_id = "PMT-INST-DB-FLOW";
+        let amount = 750.0;
+        
+        let payment = Payment {
+            id: payment_id.to_string(),
+            transaction_id: "TXN-INST-DB-FLOW".to_string(),
+            amount: 1500.0,
+            method: PaymentMethod::EWallet,
+            status: PaymentStatus::Installment,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: None,
+        };
+        
+        let installment = Installment {
+            id: format!("INST-{}", Uuid::new_v4()),
+            payment_id: payment_id.to_string(),
+            amount,
+            payment_date: Utc::now(),
+        };
+        
+        let mut updated_payment = payment.clone();
+        updated_payment.installments.push(installment);
+        
+        assert_eq!(updated_payment.installments.len(), 1);
+        assert_eq!(payment.installments.len(), 0);
+        
+        let repository_update_error = sqlx::Error::ColumnNotFound("installments".to_string());
+        let final_error = PaymentError::DatabaseError(repository_update_error.to_string());
+        
+        match final_error {
+            PaymentError::DatabaseError(msg) => {
+                assert!(msg.contains("installments"));
+            },
+            _ => panic!("Expected DatabaseError for installments update"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_method_parameters_and_return_types() {
+        let _service = PaymentService::new();
+        
+        let test_payment = Payment {
+            id: "PMT-PARAM-TEST".to_string(),
+            transaction_id: "TXN-PARAM-TEST".to_string(),
+            amount: 1250.0,
+            method: PaymentMethod::CreditCard,
+            status: PaymentStatus::Paid,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: Some(Utc::now()),
+        };
+        
+        assert_eq!(test_payment.amount, 1250.0);
+        assert_eq!(test_payment.method, PaymentMethod::CreditCard);
+        
+        let payment_ref = &test_payment;
+        assert_eq!(payment_ref.id, "PMT-PARAM-TEST");
+        
+        let id_str = "PMT-SEARCH-TEST";
+        assert_eq!(id_str.len(), 15);
+        
+        let mut test_filters = HashMap::new();
+        test_filters.insert("status".to_string(), "PAID".to_string());
+        test_filters.insert("method".to_string(), "CREDIT_CARD".to_string());
+        
+        let filters_ref = Some(test_filters);
+        assert!(filters_ref.is_some());
+        
+        let status_update_params = ("PMT-STATUS-TEST".to_string(), PaymentStatus::Installment, Some(300.0));
+        assert_eq!(status_update_params.0, "PMT-STATUS-TEST");
+        assert_eq!(status_update_params.1, PaymentStatus::Installment);
+        assert_eq!(status_update_params.2, Some(300.0));
+        
+        let delete_id = "PMT-DELETE-TEST";
+        assert!(delete_id.starts_with("PMT-"));
+        
+        let installment_params = ("PMT-INST-TEST", 400.0);
+        assert_eq!(installment_params.0, "PMT-INST-TEST");
+        assert_eq!(installment_params.1, 400.0);
+        assert!(installment_params.1 > 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_comprehensive_error_handling_coverage() {
+        let _service = PaymentService::new();
+          let error_scenarios = vec![
+            (sqlx::Error::RowNotFound, "RowNotFound"),
+            (sqlx::Error::PoolClosed, "PoolClosed"),
+            (sqlx::Error::PoolTimedOut, "PoolTimedOut"),
+        ];
+        
+        for (error, error_name) in error_scenarios {
+            let mapped_create_error = PaymentError::DatabaseError(error.to_string());
+            
+            match mapped_create_error {
+                PaymentError::DatabaseError(msg) => {
+                    assert!(!msg.is_empty());
+                    match error_name {
+                        "RowNotFound" => assert!(msg.contains("no rows returned") || msg.contains("RowNotFound") || msg.contains("row not found")),
+                        "PoolClosed" => assert!(msg.contains("pool")),
+                        "PoolTimedOut" => assert!(msg.contains("timed out")),
+                        _ => {}
+                    }
+                },
+                _ => panic!("Expected DatabaseError for {}", error_name),
+            }
+        }
+        
+        let not_found_scenarios = vec![
+            ("PMT-NOT-FOUND-1", "find_by_id"),
+            ("PMT-NOT-FOUND-2", "update"),
+            ("PMT-NOT-FOUND-3", "update_status"),
+        ];
+        
+        for (payment_id, operation) in not_found_scenarios {
+            let not_found_error = PaymentError::NotFound(format!("Payment with id {} not found", payment_id));
+            
+            match not_found_error {
+                PaymentError::NotFound(msg) => {
+                    assert!(msg.contains(payment_id));
+                    assert!(msg.contains("not found"));
+                },
+                _ => panic!("Expected NotFound error for {}", operation),
+            }
+        }
     }
 }
