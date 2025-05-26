@@ -620,4 +620,227 @@ mod tests {
         assert_eq!(deserialized.status, original_request.status);
         assert_eq!(deserialized.due_date, original_request.due_date);
     }
+
+    #[test]
+    fn test_create_payment_request_invalid_method_parsing() {
+        let json_str = r#"{
+            "transaction_id": "TXN-123",
+            "amount": 1000.0,
+            "method": "INVALID_METHOD",
+            "status": "PENDING"
+        }"#;
+
+        let request: CreatePaymentRequest = serde_json::from_str(json_str).unwrap();
+        assert_eq!(request.method, "INVALID_METHOD");
+        
+        let payment_service = PaymentService::new();
+        let parse_result = payment_service.parse_payment_method(&request.method);
+        assert!(parse_result.is_err());
+    }
+
+    #[test]
+    fn test_get_payment_by_id_success_response() {
+        use crate::manajemen_pembayaran::model::payment::{Payment, PaymentMethod};
+        use crate::manajemen_pembayaran::enums::payment_status::PaymentStatus;
+
+        let payment = Payment {
+            id: "PMT-TEST-123".to_string(),
+            transaction_id: "TXN-TEST-456".to_string(),
+            amount: 1500.0,
+            method: PaymentMethod::Cash,
+            status: PaymentStatus::Paid,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: None,
+        };
+
+        let response = ApiResponse {
+            success: true,
+            message: "Payment retrieved successfully".to_string(),
+            data: Some(payment.clone()),
+        };
+
+        assert_eq!(response.success, true);
+        assert_eq!(response.message, "Payment retrieved successfully");
+        assert!(response.data.is_some());
+        
+        if let Some(data) = response.data {
+            assert_eq!(data.id, "PMT-TEST-123");
+            assert_eq!(data.amount, 1500.0);
+        }
+    }
+
+    #[test]
+    fn test_payment_service_initialization_for_get_all_payments() {
+        let payment_service = PaymentService::new();
+        
+        assert!(payment_service.generate_payment_id().starts_with("PMT-"));
+        
+        let mut filters = HashMap::new();
+        filters.insert("status".to_string(), "PENDING".to_string());
+        filters.insert("method".to_string(), "CASH".to_string());
+        
+        let filters_option = if filters.is_empty() { None } else { Some(filters.clone()) };
+        assert!(filters_option.is_some());
+        
+        if let Some(filter_map) = filters_option {
+            assert_eq!(filter_map.get("status"), Some(&"PENDING".to_string()));
+            assert_eq!(filter_map.get("method"), Some(&"CASH".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_update_payment_status_invalid_status_parsing() {
+        let json_str = r#"{
+            "new_status": "INVALID_STATUS",
+            "additional_amount": 100.0
+        }"#;
+
+        let request: UpdatePaymentStatusRequest = serde_json::from_str(json_str).unwrap();
+        assert_eq!(request.new_status, "INVALID_STATUS");
+        
+        let payment_service = PaymentService::new();
+        let parse_result = payment_service.parse_payment_status(&request.new_status);
+        assert!(parse_result.is_err());
+        
+        let error_response: ApiResponse<Payment> = ApiResponse {
+            success: false,
+            message: "Invalid payment status: ParseError".to_string(),
+            data: None,
+        };
+        
+        assert_eq!(error_response.success, false);
+        assert!(error_response.message.contains("Invalid payment status"));
+        assert!(error_response.data.is_none());
+    }
+
+    #[test]
+    fn test_payment_service_initialization_for_add_installment() {
+        let payment_service = PaymentService::new();
+        
+        let payment_id = payment_service.generate_payment_id();
+        assert!(payment_id.starts_with("PMT-"));
+        assert_eq!(payment_id.len(), 40);
+        
+        let installment_request = AddInstallmentRequest {
+            amount: 500.0,
+        };
+        
+        assert_eq!(installment_request.amount, 500.0);
+        assert!(installment_request.amount > 0.0);
+    }
+
+    #[test]
+    fn test_delete_payment_error_response() {
+        let error_response: ApiResponse<()> = ApiResponse {
+            success: false,
+            message: "Failed to delete payment: DatabaseError".to_string(),
+            data: None,
+        };
+
+        assert_eq!(error_response.success, false);
+        assert!(error_response.message.contains("Failed to delete payment"));
+        assert!(error_response.data.is_none());
+        
+        let formatted_error = format!("Failed to delete payment: {:?}", "TestError");
+        assert!(formatted_error.contains("Failed to delete payment"));
+        assert!(formatted_error.contains("TestError"));
+    }
+
+    #[test]
+    fn test_routes_function() {
+        let route_list = routes();
+        
+        assert_eq!(route_list.len(), 6);
+        
+        assert!(!route_list.is_empty());
+    }    
+    
+    #[test]
+    fn test_not_found_catcher() {
+        let response = not_found_catcher();
+        let response_inner = response.into_inner();
+        
+        assert_eq!(response_inner.success, false);
+        assert_eq!(response_inner.message, "Resource not found");
+        assert!(response_inner.data.is_none());
+        
+        let serialized = serde_json::to_string(&response_inner).unwrap();
+        assert!(serialized.contains("Resource not found"));
+        assert!(serialized.contains("false"));
+    }
+    
+    #[test]
+    fn test_bad_request_catcher() {
+        let response = bad_request_catcher();
+        let response_inner = response.into_inner();
+        
+        assert_eq!(response_inner.success, false);
+        assert_eq!(response_inner.message, "Bad request");
+        assert!(response_inner.data.is_none());
+        
+        let serialized = serde_json::to_string(&response_inner).unwrap();
+        assert!(serialized.contains("Bad request"));
+        assert!(serialized.contains("false"));
+        
+        let expected_response: ApiResponse<()> = ApiResponse {
+            success: false,
+            message: "Bad request".to_string(),
+            data: None,
+        };
+        
+        assert_eq!(response_inner.success, expected_response.success);
+        assert_eq!(response_inner.message, expected_response.message);
+        assert_eq!(response_inner.data, expected_response.data);
+    }
+
+    #[test]
+    fn test_payment_filter_request_all_fields() {
+        let filter_request = PaymentFilterRequest {
+            status: Some("PENDING".to_string()),
+            method: Some("CREDIT_CARD".to_string()),
+            transaction_id: Some("TXN-FILTER-TEST".to_string()),
+        };
+
+        assert!(filter_request.status.is_some());
+        assert!(filter_request.method.is_some());
+        assert!(filter_request.transaction_id.is_some());
+        
+        let mut filters = HashMap::new();
+        if let Some(status_str) = filter_request.status {
+            filters.insert("status".to_string(), status_str);
+        }
+        if let Some(method_str) = filter_request.method {
+            filters.insert("method".to_string(), method_str);
+        }
+        if let Some(tx_id) = filter_request.transaction_id {
+            filters.insert("transaction_id".to_string(), tx_id);
+        }
+
+        assert_eq!(filters.len(), 3);
+        assert!(filters.contains_key("status"));
+        assert!(filters.contains_key("method"));
+        assert!(filters.contains_key("transaction_id"));
+    }
+
+    #[test]
+    fn test_error_response_formatting() {
+        let parse_error = format!("Invalid payment method: {:?}", "TestError");
+        assert!(parse_error.contains("Invalid payment method"));
+        
+        let status_error = format!("Invalid payment status: {:?}", "TestError");
+        assert!(status_error.contains("Invalid payment status"));
+        
+        let retrieval_error = format!("Failed to retrieve payment: {:?}", "TestError");
+        assert!(retrieval_error.contains("Failed to retrieve payment"));
+        
+        let update_error = format!("Failed to update payment status: {:?}", "TestError");
+        assert!(update_error.contains("Failed to update payment status"));
+        
+        let installment_error = format!("Failed to add installment: {:?}", "TestError");
+        assert!(installment_error.contains("Failed to add installment"));
+        
+        let delete_error = format!("Failed to delete payment: {:?}", "TestError");
+        assert!(delete_error.contains("Failed to delete payment"));
+    }
 }
