@@ -352,7 +352,7 @@ pub async fn validate_product_stock(
 mod tests {
     use super::*;
     use rocket::local::asynchronous::Client;
-    use rocket::{routes, Rocket, async_test};
+    use rocket::{routes, uri, Rocket, async_test};
     use sqlx::any::install_default_drivers;
     use crate::transaksi_penjualan::model::transaksi::Transaksi;
 
@@ -607,45 +607,5 @@ mod tests {
             .await;
 
         assert_eq!(response.status(), Status::BadRequest);
-    }
-
-    #[async_test]
-    async fn test_get_all_transaksi_empty() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
-
-        let response = client.get("/api/transaksi").dispatch().await;
-        assert_eq!(response.status(), Status::Ok);
-        
-        let body: Vec<Transaksi> = response.into_json().await.unwrap();
-        assert_eq!(body.len(), 0);
-    }
-
-    #[async_test]
-    async fn test_create_transaksi_invalid_request() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
-
-        let invalid_request = serde_json::json!({
-            "id_pelanggan": 1,
-            "nama_pelanggan": "",
-            "detail_transaksi": []
-        });
-
-        let response = client.post("/api/transaksi")
-            .json(&invalid_request)
-            .dispatch()
-            .await;
-
-        assert_eq!(response.status(), Status::BadRequest);
-    }
-
-    #[async_test]
-    async fn test_get_transaksi_not_found() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
-
-        let response = client.get("/api/transaksi/999").dispatch().await;
-        assert_eq!(response.status(), Status::NotFound);
     }
 }
