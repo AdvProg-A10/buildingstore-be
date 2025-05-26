@@ -36,7 +36,7 @@ impl PaymentService {
         
         PembayaranRepository::find_by_id(conn, id).await
             .map_err(|e| match e {
-                sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {} not found", id)),
+                sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {id} not found")),
                 _ => PaymentError::DatabaseError(e.to_string())
             })
     }
@@ -59,13 +59,14 @@ impl PaymentService {
                 _ => PaymentError::DatabaseError(e.to_string())
             })
     }
+    
     pub async fn update_payment_status(&self, db: &State<Pool<Any>>, payment_id: String, new_status: PaymentStatus, additional_amount: Option<f64>) -> Result<Payment, PaymentError> {
         let conn = db.acquire().await
             .map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
         
         PembayaranRepository::update_payment_status(conn, payment_id.clone(), new_status, additional_amount).await
             .map_err(|e| match e {
-                sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {} not found", payment_id)),
+                sqlx::Error::RowNotFound => PaymentError::NotFound(format!("Payment with id {payment_id} not found")),
                 _ => PaymentError::DatabaseError(e.to_string())
             })
     }
@@ -112,13 +113,19 @@ impl PaymentService {
             "CREDIT_CARD" => Ok(PaymentMethod::CreditCard),
             "BANK_TRANSFER" => Ok(PaymentMethod::BankTransfer),
             "E_WALLET" => Ok(PaymentMethod::EWallet),
-            _ => Err(PaymentError::InvalidInput(format!("Invalid payment method: {}", method_str))),
+            _ => Err(PaymentError::InvalidInput(format!("Invalid payment method: {method_str}"))),
         }
     }
     
     pub fn parse_payment_status(&self, status_str: &str) -> Result<PaymentStatus, PaymentError> {
         PaymentStatus::from_string(status_str)
-            .ok_or_else(|| PaymentError::InvalidInput(format!("Invalid payment status: {}", status_str)))
+            .ok_or_else(|| PaymentError::InvalidInput(format!("Invalid payment status: {status_str}")))
+    }
+}
+
+impl Default for PaymentService {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -181,7 +188,9 @@ mod tests {
 
         let result2 = service.parse_payment_method("");
         assert!(result2.is_err());
-    }    #[test]
+    }
+    
+    #[test]
     fn test_parse_payment_status_valid() {
         let service = PaymentService::new();
 
@@ -371,7 +380,7 @@ mod tests {
             },
             _ => panic!("Expected DatabaseError"),
         }
-    }    
+    }
     
     #[tokio::test]
     async fn test_get_payment_by_id_error_handling() {
@@ -402,7 +411,7 @@ mod tests {
             },
             _ => panic!("Expected DatabaseError"),
         }
-    }    
+    }
     
     #[tokio::test]
     async fn test_get_all_payments_with_filters() {
@@ -422,7 +431,7 @@ mod tests {
         
         let empty_filters: Option<HashMap<String, String>> = None;
         assert!(empty_filters.is_none());
-    }    
+    }
     
     #[tokio::test]
     async fn test_update_payment_error_handling() {
@@ -464,7 +473,7 @@ mod tests {
             },
             _ => panic!("Expected DatabaseError"),
         }
-    }    
+    }
     
     #[tokio::test]
     async fn test_update_payment_status_error_handling() {
@@ -493,7 +502,7 @@ mod tests {
         
         let cloned_payment_id = payment_id.clone();
         assert_eq!(cloned_payment_id, payment_id);
-    }    
+    }
     
     #[tokio::test]
     async fn test_delete_payment_error_handling() {
@@ -519,7 +528,7 @@ mod tests {
             },
             _ => panic!("Expected DatabaseError"),
         }
-    }   
+    }
     
     #[tokio::test]
     async fn test_add_installment_validation_logic() {
@@ -586,7 +595,7 @@ mod tests {
         assert_eq!(updated_payment.installments[0].amount, installment.amount);
         
         assert_eq!(valid_payment.installments.len(), 0);
-    }    
+    }
     
     #[tokio::test]
     async fn test_add_installment_database_operations() {
@@ -611,7 +620,7 @@ mod tests {
             },
             _ => panic!("Expected DatabaseError"),
         }
-    }    
+    }
     
     #[tokio::test]
     async fn test_service_method_parameter_types() {
@@ -660,17 +669,17 @@ mod tests {
         assert_eq!(installment_payment_id, "PMT-INST-002");
         assert_eq!(installment_amount, 300.0);
         assert!(installment_amount > 0.0);
-    }    
+    }
     
     #[tokio::test]
     async fn test_error_propagation_patterns() {
         let _service = PaymentService::new();
         
-        let sample_errors = vec!(
+        let sample_errors = vec![
             sqlx::Error::RowNotFound,
             sqlx::Error::PoolClosed,
             sqlx::Error::PoolTimedOut,
-        );
+        ];
         
         for error in sample_errors {
             let mapped_error = match error {
