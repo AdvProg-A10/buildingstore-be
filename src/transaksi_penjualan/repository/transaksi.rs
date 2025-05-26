@@ -252,7 +252,6 @@ mod test {
     async fn setup() -> Pool<Any> {
         install_default_drivers();
         
-
         let db = sqlx::any::AnyPoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
