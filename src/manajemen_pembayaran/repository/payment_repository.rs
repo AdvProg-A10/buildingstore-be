@@ -55,7 +55,6 @@ impl PembayaranRepository {
     
     pub async fn find_by_id(mut db: PoolConnection<Any>, id: &str) -> Result<Payment, sqlx::Error>{
         let payment_with_installments = Self::load_payment_with_installments(&mut db, id).await?;
-
         Ok(payment_with_installments)
     }    
     
@@ -66,18 +65,18 @@ impl PembayaranRepository {
         
         if let Some(filter_map) = &filters {
             if let Some(status_str) = filter_map.get("status") {
-            where_clauses.push("status = $1".to_string());
-            bind_values.push(status_str);
+                where_clauses.push("status = $1".to_string());
+                bind_values.push(status_str);
             }
             if let Some(method) = filter_map.get("method") {
-            let param_num = bind_values.len() + 1;
-            where_clauses.push(format!("method = ${param_num}"));
-            bind_values.push(method);
+                let param_num = bind_values.len() + 1;
+                where_clauses.push(format!("method = ${param_num}"));
+                bind_values.push(method);
             }
             if let Some(transaction_id) = filter_map.get("transaction_id") {
-            let param_num = bind_values.len() + 1;
-            where_clauses.push(format!("transaction_id = ${param_num}"));
-            bind_values.push(transaction_id);
+                let param_num = bind_values.len() + 1;
+                where_clauses.push(format!("transaction_id = ${param_num}"));
+                bind_values.push(transaction_id);
             }
         }
         
@@ -133,7 +132,6 @@ impl PembayaranRepository {
         let updated_payment = Self::parse_row_to_payment(result)?;
         
         let payment_with_installments = Self::load_payment_with_installments(&mut db, &updated_payment.id).await?;
-
         Ok(payment_with_installments)
     }
 
@@ -241,7 +239,7 @@ impl PembayaranRepository {
             "E_WALLET" => PaymentMethod::EWallet,
             _ => return Err(sqlx::Error::RowNotFound),
         };
-          let payment_status = PaymentStatus::from_string(&status_str)
+        let payment_status = PaymentStatus::from_string(&status_str)
             .ok_or(sqlx::Error::RowNotFound)?;        let payment_date = DateTime::parse_from_rfc3339(&payment_date_str)
             .map(|dt| dt.with_timezone(&Utc))
             .or_else(|_| {
@@ -316,6 +314,360 @@ mod tests {
     use chrono::{Utc};
     use uuid::Uuid;
     use std::collections::HashMap;
+    use sqlx::any::{AnyPoolOptions, install_default_drivers};
+    use sqlx::{Any, Pool};
+
+    async fn setup_test_db() -> Pool<Any> {
+        install_default_drivers();
+        
+        let unique_db_id = Uuid::new_v4().simple().to_string();
+        let db_connection_string = format!("sqlite:file:memtest_{}?mode=memory&cache=shared", unique_db_id);
+        
+        let db_pool = AnyPoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(std::time::Duration::from_secs(10))
+            .connect(&db_connection_string)
+            .await
+            .expect("Failed to connect to test DB");
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS payments (
+                id TEXT PRIMARY KEY,
+                transaction_id TEXT NOT NULL,
+                amount REAL NOT NULL,
+                method TEXT NOT NULL,
+                status TEXT NOT NULL,
+                payment_date TEXT NOT NULL,
+                due_date TEXT
+            )
+            "#
+        )
+        .execute(&db_pool)
+        .await
+        .expect("Failed to create payments table");
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS installments (
+                id TEXT PRIMARY KEY,
+                payment_id TEXT NOT NULL,
+                amount REAL NOT NULL,
+                payment_date TEXT NOT NULL,
+                FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+            )
+            "#
+        )
+        .execute(&db_pool)
+        .await
+        .expect("Failed to create installments table");
+
+        db_pool
+    }
+
+    fn create_test_payment() -> Payment {
+        Payment {
+            id: format!("PMT-INTEG-{}", Uuid::new_v4()),
+            transaction_id: format!("TXN-INTEG-{}", Uuid::new_v4()),
+            amount: 1000.0,
+            method: PaymentMethod::Cash,
+            status: PaymentStatus::Paid,
+            payment_date: Utc::now(),
+            installments: Vec::new(),
+            due_date: Some(Utc::now()),
+        }
+    }
+
+    fn create_test_payment_with_installments() -> Payment {
+        let payment_id = format!("PMT-INST-{}", Uuid::new_v4());
+        Payment {
+            id: payment_id.clone(),
+            transaction_id: format!("TXN-INST-{}", Uuid::new_v4()),
+            amount: 1500.0,
+            method: PaymentMethod::CreditCard,
+            status: PaymentStatus::Installment,
+            payment_date: Utc::now(),
+            installments: vec![
+                Installment {
+                    id: format!("INST-{}", Uuid::new_v4()),
+                    payment_id: payment_id.clone(),
+                    amount: 500.0,
+                    payment_date: Utc::now(),
+                },
+                Installment {
+                    id: format!("INST-{}", Uuid::new_v4()),
+                    payment_id: payment_id.clone(),
+                    amount: 300.0,
+                    payment_date: Utc::now(),
+                }
+            ],
+            due_date: Some(Utc::now()),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_payment_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::create(db_conn, &payment).await;
+        
+        assert!(result.is_ok(), "Create payment failed: {:?}", result.err());
+        let created_payment = result.unwrap();
+        assert_eq!(created_payment.id, payment.id);
+        assert_eq!(created_payment.transaction_id, payment.transaction_id);
+        assert_eq!(created_payment.amount, payment.amount);
+    }
+
+    #[tokio::test]
+    async fn test_create_payment_with_installments_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment_with_installments();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::create(db_conn, &payment).await;
+        
+        assert!(result.is_ok(), "Create payment with installments failed: {:?}", result.err());
+        let created_payment = result.unwrap();
+        assert_eq!(created_payment.id, payment.id);
+        assert_eq!(created_payment.installments.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_find_by_id_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::find_by_id(db_conn, &payment.id).await;
+        
+        assert!(result.is_ok(), "Find by ID failed: {:?}", result.err());
+        let found_payment = result.unwrap();
+        assert_eq!(found_payment.id, payment.id);
+        assert_eq!(found_payment.transaction_id, payment.transaction_id);
+    }
+
+    #[tokio::test]
+    async fn test_find_by_id_not_found_integration() {
+        let db_pool = setup_test_db().await;
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::find_by_id(db_conn, "PMT-NONEXISTENT").await;
+        
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            sqlx::Error::RowNotFound => {},
+            e => panic!("Expected RowNotFound error, got: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_find_all_empty_integration() {
+        let db_pool = setup_test_db().await;
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::find_all(db_conn, None).await;
+        
+        assert!(result.is_ok(), "Find all (empty) failed: {:?}", result.err());
+        let payments = result.unwrap();
+        assert!(payments.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_find_all_with_payments_integration() {
+        let db_pool = setup_test_db().await;
+        let payment1 = create_test_payment();
+        let payment2 = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment1).await.unwrap();
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment2).await.unwrap();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::find_all(db_conn, None).await;
+        
+        assert!(result.is_ok(), "Find all failed: {:?}", result.err());
+        let payments = result.unwrap();
+        assert_eq!(payments.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_find_all_with_status_filter_integration() {
+        let db_pool = setup_test_db().await;
+        let mut payment1 = create_test_payment();
+        payment1.status = PaymentStatus::Paid;
+        let mut payment2 = create_test_payment();
+        payment2.status = PaymentStatus::Installment;
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment1).await.unwrap();
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment2).await.unwrap();
+        
+        let mut filters = HashMap::new();
+        filters.insert("status".to_string(), "LUNAS".to_string());
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::find_all(db_conn, Some(filters)).await;
+        
+        assert!(result.is_ok(), "Find all with filter failed: {:?}", result.err());
+        let payments = result.unwrap();
+        assert_eq!(payments.len(), 1);
+        assert_eq!(payments[0].status, PaymentStatus::Paid);
+    }
+
+    #[tokio::test]
+    async fn test_update_payment_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let mut updated_payment = payment.clone();
+        updated_payment.amount = 2000.0;
+        updated_payment.method = PaymentMethod::BankTransfer;
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::update(db_conn, &updated_payment).await;
+        
+        assert!(result.is_ok(), "Update payment failed: {:?}", result.err());
+        let updated = result.unwrap();
+        assert_eq!(updated.amount, 2000.0);
+        assert_eq!(updated.method, PaymentMethod::BankTransfer);
+    }
+
+    #[tokio::test]
+    async fn test_update_payment_status_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::update_payment_status(
+            db_conn, 
+            payment.id.clone(), 
+            PaymentStatus::Installment, 
+            Some(500.0)
+        ).await;
+        
+        assert!(result.is_ok(), "Update payment status failed: {:?}", result.err());
+        let updated = result.unwrap();
+        assert_eq!(updated.status, PaymentStatus::Installment);
+        assert_eq!(updated.installments.len(), 1);
+        assert_eq!(updated.installments[0].amount, 500.0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_payment_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment_with_installments();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::delete(db_conn, &payment.id).await;
+        
+        assert!(result.is_ok(), "Delete payment failed: {:?}", result.err());
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let find_result = PembayaranRepository::find_by_id(db_conn, &payment.id).await;
+        assert!(find_result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_add_installment_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let installment = Installment {
+            id: format!("INST-{}", Uuid::new_v4()),
+            payment_id: payment.id.clone(),
+            amount: 250.0,
+            payment_date: Utc::now(),
+        };
+        
+        let mut db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::add_installment(&mut db_conn, &installment).await;
+        
+        assert!(result.is_ok(), "Add installment failed: {:?}", result.err());
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        let found_payment = PembayaranRepository::find_by_id(db_conn, &payment.id).await.unwrap();
+        assert_eq!(found_payment.installments.len(), 1);
+        assert_eq!(found_payment.installments[0].amount, 250.0);
+    }
+
+    #[tokio::test]
+    async fn test_load_payment_with_installments_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment_with_installments();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let mut db_conn = db_pool.acquire().await.unwrap();
+        let result = PembayaranRepository::load_payment_with_installments(&mut db_conn, &payment.id).await;
+        
+        assert!(result.is_ok(), "Load payment with installments failed: {:?}", result.err());
+        let loaded_payment = result.unwrap();
+        assert_eq!(loaded_payment.id, payment.id);
+        assert_eq!(loaded_payment.installments.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_parse_row_to_payment_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let mut db_conn = db_pool.acquire().await.unwrap();
+        let row = sqlx::query("SELECT id, transaction_id, amount, method, status, payment_date, due_date FROM payments WHERE id = $1")
+            .bind(&payment.id)
+            .fetch_one(&mut *db_conn)
+            .await
+            .unwrap();
+        
+        let result = PembayaranRepository::parse_row_to_payment(row);
+        assert!(result.is_ok(), "Parse row to payment failed: {:?}", result.err());
+        let parsed_payment = result.unwrap();
+        assert_eq!(parsed_payment.id, payment.id);
+        assert_eq!(parsed_payment.transaction_id, payment.transaction_id);
+    }
+
+    #[tokio::test]
+    async fn test_parse_row_to_installment_integration() {
+        let db_pool = setup_test_db().await;
+        let payment = create_test_payment_with_installments();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        PembayaranRepository::create(db_conn, &payment).await.unwrap();
+        
+        let mut db_conn = db_pool.acquire().await.unwrap();
+        let row = sqlx::query("SELECT id, payment_id, amount, payment_date FROM installments WHERE payment_id = $1 LIMIT 1")
+            .bind(&payment.id)
+            .fetch_one(&mut *db_conn)
+            .await
+            .unwrap();
+        
+        let result = PembayaranRepository::parse_row_to_installment(row);
+        assert!(result.is_ok(), "Parse row to installment failed: {:?}", result.err());
+        let parsed_installment = result.unwrap();
+        assert_eq!(parsed_installment.payment_id, payment.id);
+        assert!(parsed_installment.amount > 0.0);
+    }
 
     #[test]
     fn test_parse_row_to_payment_success() {
