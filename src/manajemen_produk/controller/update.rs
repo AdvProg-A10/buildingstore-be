@@ -1,6 +1,6 @@
 use rocket::serde::json::Json;
 use rocket::{put, routes, Route};
-use crate::manajemen_produk::model::{Produk, ProdukBuilder};
+use crate::manajemen_produk::model::{ProdukBuilder};
 use crate::manajemen_produk::repository;
 use super::dto::{ProdukRequest, ProdukResponse, ApiResponse};
 use autometrics::autometrics;
@@ -126,7 +126,7 @@ mod tests {
     use rocket::http::{ContentType, Status};
     use rocket::local::asynchronous::Client;
     use rocket::serde::json::json;
-    use crate::manajemen_produk::controller::{ApiResponse, ProdukResponse, routes};
+    use crate::manajemen_produk::controller::{ApiResponse, ProdukResponse};
     use crate::manajemen_produk::model::Produk;
     use crate::manajemen_produk::repository;
 

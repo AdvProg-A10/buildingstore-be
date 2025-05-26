@@ -67,24 +67,22 @@ mod tests {
     use rocket::http::{ContentType, Status};
     use rocket::local::asynchronous::Client;
     use rocket::serde::json::json;
-    use serde_json;
-    use crate::manajemen_produk::controller::{ApiResponse, ProdukResponse};
-    use crate::manajemen_produk::repository::dto::init_database;
+    use crate::manajemen_produk::controller::{ApiResponse, ProdukResponse, routes};
 
     async fn setup_test_client() -> Client {
-        let _ = init_database().await;
-        let rocket = rocket::build().mount("/api", super::routes());
+        let rocket = rocket::build().mount("/api", routes());
         Client::tracked(rocket).await.expect("valid rocket instance")
     }
 
     async fn clean_test_data() {
-        let _ = init_database().await;
         let _ = crate::manajemen_produk::repository::delete::clear_all().await;
     }
 
     #[tokio::test]
     async fn test_tambah_produk() {
         let client = setup_test_client().await;
+        
+        // Clean up first
         clean_test_data().await;
         
         let response = client.post("/api/produk")
@@ -107,8 +105,80 @@ mod tests {
         assert!(json.success);
         let produk = json.data.unwrap();
         assert_eq!(produk.nama, "Test Laptop");
+        assert_eq!(produk.kategori, "Elektronik");
+        assert_eq!(produk.harga, 10_000_000.0);
         assert_eq!(produk.stok, 5);
         
+        // Clean up
+        clean_test_data().await;
+    }
+
+    #[tokio::test]
+    async fn test_tambah_batch_produk() {
+        let client = setup_test_client().await;
+        
+        // Clean up first
+        clean_test_data().await;
+        
+        let response = client.post("/api/produk/batch")
+            .header(ContentType::JSON)
+            .body(json!([
+                {
+                    "nama": "Laptop 1",
+                    "kategori": "Elektronik",
+                    "harga": 10_000_000.0,
+                    "stok": 5,
+                    "deskripsi": "Laptop description 1"
+                },
+                {
+                    "nama": "Laptop 2",
+                    "kategori": "Elektronik",
+                    "harga": 12_000_000.0,
+                    "stok": 3,
+                    "deskripsi": "Laptop description 2"
+                }
+            ]).to_string())
+            .dispatch()
+            .await;
+        
+        assert_eq!(response.status(), Status::Ok);
+        
+        let body = response.into_string().await.unwrap();
+        let json: ApiResponse<Vec<ProdukResponse>> = serde_json::from_str(&body).unwrap();
+        
+        assert!(json.success);
+        let products = json.data.unwrap();
+        assert_eq!(products.len(), 2);
+        
+        // Clean up
+        clean_test_data().await;
+    }
+
+    #[tokio::test]
+    async fn test_tambah_produk_invalid_data() {
+        let client = setup_test_client().await;
+        
+        let response = client.post("/api/produk")
+            .header(ContentType::JSON)
+            .body(json!({
+                "nama": "",
+                "kategori": "Elektronik",
+                "harga": -1000.0,
+                "stok": 5,
+                "deskripsi": "Invalid product"
+            }).to_string())
+            .dispatch()
+            .await;
+        
+        assert_eq!(response.status(), Status::Ok);
+        
+        let body = response.into_string().await.unwrap();
+        let json: ApiResponse<ProdukResponse> = serde_json::from_str(&body).unwrap();
+        
+        assert!(!json.success);
+        assert!(json.data.is_none());
+        
+        // Clean up
         clean_test_data().await;
     }
 }
