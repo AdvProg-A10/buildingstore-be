@@ -14,12 +14,15 @@ impl PaymentStatus {
             _ => None,
         }
     }
-    
-    pub fn to_string(&self) -> String {
-        match self {
-            PaymentStatus::Paid => "LUNAS".to_string(),
-            PaymentStatus::Installment => "CICILAN".to_string(),
-        }
+}
+
+impl std::fmt::Display for PaymentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            PaymentStatus::Paid => "LUNAS",
+            PaymentStatus::Installment => "CICILAN",
+        };
+        write!(f, "{}", s)
     }
 }
 
