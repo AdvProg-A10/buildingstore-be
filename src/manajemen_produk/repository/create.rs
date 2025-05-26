@@ -124,7 +124,7 @@ mod tests {
 
         let nama: String = row.get("nama");
         let kategori: String = row.get("kategori");
-        let deskripsi: Option<String> = row.get("deskripsi");
+        let deskripsi: Option<String> = row.try_get("deskripsi").map_or(None, |v: String| Some(v));
         
         assert_eq!(nama, "Mouse");
         assert_eq!(kategori, "Aksesoris");
