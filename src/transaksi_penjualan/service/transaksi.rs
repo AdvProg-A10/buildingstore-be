@@ -424,7 +424,7 @@ mod test {
             150000.0,
             Some("Test transaction".to_string()),
         );
-        let created_transaksi = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+        let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
 
         assert_eq!(created_transaksi.id_pelanggan, 1);
         assert_eq!(created_transaksi.nama_pelanggan, "Castorice");
@@ -442,9 +442,9 @@ mod test {
             200000.0,
             None,
         );
-        let created_transaksi = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+        let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
 
-        let fetched_transaksi = TransaksiRepository::get_transaksi_by_id(db.acquire().await.unwrap(), created_transaksi.id).await.unwrap();
+        let fetched_transaksi = TransaksiService::get_transaksi_by_id(db.clone(), created_transaksi.id).await.unwrap();
 
         assert_eq!(fetched_transaksi.id_pelanggan, 2);
         assert_eq!(fetched_transaksi.nama_pelanggan, "Tribbie");
@@ -461,7 +461,7 @@ mod test {
             500000.0,
             None,
         );
-        let created_transaksi = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+        let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
 
         let detail = DetailTransaksi::new(
             created_transaksi.id,
@@ -469,7 +469,7 @@ mod test {
             15000000.0,
             1,
         );
-        let created_detail = TransaksiRepository::create_detail_transaksi(db.acquire().await.unwrap(), &detail).await.unwrap();
+        let created_detail = TransaksiService::add_detail_transaksi(db.clone(), &detail).await.unwrap();
 
         assert_eq!(created_detail.id_transaksi, created_transaksi.id);
         assert_eq!(created_detail.id_produk, 101);
@@ -483,10 +483,10 @@ mod test {
         let transaksi1 = Transaksi::new(1, "Alice".to_string(), 100000.0, None);
         let transaksi2 = Transaksi::new(2, "Bob".to_string(), 200000.0, None);
 
-        TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi1).await.unwrap();
-        TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi2).await.unwrap();
+        TransaksiService::create_transaksi(db.clone(), &transaksi1).await.unwrap();
+        TransaksiService::create_transaksi(db.clone(), &transaksi2).await.unwrap();
 
-        let all_transaksi = TransaksiRepository::get_all_transaksi(db.acquire().await.unwrap()).await.unwrap();
+        let all_transaksi = TransaksiService::get_all_transaksi(db.clone()).await.unwrap();
         
         assert_eq!(all_transaksi.len(), 2);
         assert!(all_transaksi.iter().any(|t| t.nama_pelanggan == "Alice"));
@@ -504,7 +504,7 @@ mod test {
             Some("Testing simple data types".to_string()),
         );
 
-        let created = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+        let created = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
         
         assert!(created.id > 0);
         assert_eq!(created.id_pelanggan, 99);

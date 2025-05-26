@@ -16,7 +16,7 @@ impl TransaksiRepository {
         let result = sqlx::query("
                 INSERT INTO transaksi (id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga::text as total_harga_str, status, catatan
+                RETURNING id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan
             ")
             .bind(transaksi.id_pelanggan)
             .bind(&transaksi.nama_pelanggan)
@@ -35,7 +35,7 @@ impl TransaksiRepository {
 
     pub async fn get_transaksi_by_id(mut db: PoolConnection<Any>, id: i32) -> Result<Transaksi, sqlx::Error> {
         let result = sqlx::query("
-                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga::text as total_harga_str, status, catatan
+                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan
                 FROM transaksi
                 WHERE id = $1
             ")
@@ -55,7 +55,7 @@ impl TransaksiRepository {
                 SET id_pelanggan = $1, nama_pelanggan = $2, tanggal_transaksi = $3, 
                     total_harga = $4, status = $5, catatan = $6, updated_at = $7
                 WHERE id = $8
-                RETURNING id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga::text as total_harga_str, status, catatan
+                RETURNING id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan
             ")
             .bind(transaksi.id_pelanggan)
             .bind(&transaksi.nama_pelanggan)
@@ -84,7 +84,7 @@ impl TransaksiRepository {
     pub async fn get_all_transaksi(mut db: PoolConnection<Any>) -> Result<Vec<Transaksi>, sqlx::Error> {        
         let rows = sqlx::query("
                 SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
-                       total_harga::text as total_harga_str, status, catatan
+                       total_harga, status, catatan
                 FROM transaksi
                 ORDER BY tanggal_transaksi DESC
             ")
@@ -109,7 +109,7 @@ impl TransaksiRepository {
     pub async fn get_transaksi_by_pelanggan(mut db: PoolConnection<Any>, id_pelanggan: i32) -> Result<Vec<Transaksi>, sqlx::Error> {
         let rows = sqlx::query("
                 SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
-                       total_harga::text as total_harga_str, status, catatan
+                       total_harga, status, catatan
                 FROM transaksi
                 WHERE id_pelanggan = $1
                 ORDER BY tanggal_transaksi DESC
@@ -130,7 +130,7 @@ impl TransaksiRepository {
     pub async fn get_transaksi_by_status(mut db: PoolConnection<Any>, status: &StatusTransaksi) -> Result<Vec<Transaksi>, sqlx::Error> {
         let rows = sqlx::query("
                 SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
-                       total_harga::text as total_harga_str, status, catatan
+                       total_harga, status, catatan
                 FROM transaksi
                 WHERE status = $1
                 ORDER BY tanggal_transaksi DESC
@@ -154,7 +154,7 @@ impl TransaksiRepository {
         let result = sqlx::query("
                 INSERT INTO detail_transaksi (id_transaksi, id_produk, harga_satuan, jumlah, subtotal, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, id_transaksi, id_produk, harga_satuan::text as harga_satuan_str, jumlah, subtotal::text as subtotal_str
+                RETURNING id, id_transaksi, id_produk, harga_satuan, jumlah, subtotal
             ")
             .bind(detail.id_transaksi)
             .bind(detail.id_produk)
@@ -173,7 +173,7 @@ impl TransaksiRepository {
     pub async fn get_detail_by_transaksi_id(mut db: PoolConnection<Any>, id_transaksi: i32) -> Result<Vec<DetailTransaksi>, sqlx::Error> {
         let rows = sqlx::query("
                 SELECT id, id_transaksi, id_produk, 
-                       harga_satuan::text as harga_satuan_str, jumlah, subtotal::text as subtotal_str
+                       harga_satuan, jumlah, subtotal
                 FROM detail_transaksi
                 WHERE id_transaksi = $1
                 ORDER BY id
@@ -198,7 +198,7 @@ impl TransaksiRepository {
                 UPDATE detail_transaksi
                 SET id_produk = $1, harga_satuan = $2, jumlah = $3, subtotal = $4, updated_at = $5
                 WHERE id = $6
-                RETURNING id, id_transaksi, id_produk, harga_satuan::text as harga_satuan_str, jumlah, subtotal::text as subtotal_str
+                RETURNING id, id_transaksi, id_produk, harga_satuan, jumlah, subtotal
             ")
             .bind(detail.id_produk)
             .bind(detail.harga_satuan)
@@ -237,13 +237,7 @@ impl TransaksiRepository {
         let nama_pelanggan: String = row.try_get("nama_pelanggan")?;
         let tanggal_transaksi: String = row.try_get("tanggal_transaksi")?;
         
-        let total_harga_str: String = row.try_get("total_harga_str")?;
-        let total_harga: f64 = total_harga_str.parse::<f64>().map_err(|e| {
-            sqlx::Error::ColumnDecode { 
-                index: "total_harga_str".to_string(), 
-                source: Box::new(e) 
-            }
-        })?;
+        let total_harga: f64 = row.try_get("total_harga")?;
         
         let status_str: String = row.try_get("status")?;
         let status = StatusTransaksi::from_string(&status_str).unwrap_or(StatusTransaksi::MasihDiproses);
@@ -269,21 +263,8 @@ impl TransaksiRepository {
         let id_transaksi: i32 = row.try_get("id_transaksi")?;
         let id_produk: i32 = row.try_get("id_produk")?;
         
-        let harga_satuan_str: String = row.try_get("harga_satuan_str")?;
-        let harga_satuan: f64 = harga_satuan_str.parse::<f64>().map_err(|e| {
-            sqlx::Error::ColumnDecode { 
-                index: "harga_satuan_str".to_string(), 
-                source: Box::new(e) 
-            }
-        })?;
-        
-        let subtotal_str: String = row.try_get("subtotal_str")?;
-        let subtotal: f64 = subtotal_str.parse::<f64>().map_err(|e| {
-            sqlx::Error::ColumnDecode { 
-                index: "subtotal_str".to_string(), 
-                source: Box::new(e) 
-            }
-        })?;
+        let harga_satuan: f64 = row.try_get("harga_satuan")?;
+        let subtotal: f64 = row.try_get("subtotal")?;
         
         let jumlah: u32 = row.try_get::<i32, _>("jumlah")? as u32;
 
@@ -439,6 +420,5 @@ mod test {
         assert_eq!(created.id_pelanggan, 99);
         assert_eq!(created.nama_pelanggan, "Numeric Test");
         assert!((created.total_harga - 1234.56).abs() < 0.01);
-    
     }
 }
