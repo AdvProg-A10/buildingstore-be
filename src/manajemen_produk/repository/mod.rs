@@ -5,8 +5,18 @@ pub mod update;
 pub mod delete;
 
 pub struct ProdukRepository;
-pub use dto::{RepositoryError, init_database, get_db_pool};
-pub use create::{tambah_produk};
+
+// Export semua fungsi yang diperlukan
+pub use dto::{
+    RepositoryError, 
+    get_db_pool_from_state,
+    validate_produk,
+    row_to_produk,
+    get_store_stats
+};
+
+// Semua fungsi repository sekarang menerima pool sebagai parameter
+pub use create::*;
 pub use read::*;
-pub use update::{update_produk, update_stok, update_harga};
-pub use delete::{hapus_produk, clear_all};
+pub use update::*;
+pub use delete::*;
