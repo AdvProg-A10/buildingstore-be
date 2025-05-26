@@ -66,16 +66,18 @@ impl PembayaranRepository {
         
         if let Some(filter_map) = &filters {
             if let Some(status_str) = filter_map.get("status") {
-                where_clauses.push("status = $1".to_string());
-                bind_values.push(status_str);
-            }            if let Some(method) = filter_map.get("method") {
-                let param_num = bind_values.len() + 1;
-                where_clauses.push(format!("method = ${param_num}"));
-                bind_values.push(method);
-            }            if let Some(transaction_id) = filter_map.get("transaction_id") {
-                let param_num = bind_values.len() + 1;
-                where_clauses.push(format!("transaction_id = ${param_num}"));
-                bind_values.push(transaction_id);
+            where_clauses.push("status = $1".to_string());
+            bind_values.push(status_str);
+            }
+            if let Some(method) = filter_map.get("method") {
+            let param_num = bind_values.len() + 1;
+            where_clauses.push(format!("method = ${param_num}"));
+            bind_values.push(method);
+            }
+            if let Some(transaction_id) = filter_map.get("transaction_id") {
+            let param_num = bind_values.len() + 1;
+            where_clauses.push(format!("transaction_id = ${param_num}"));
+            bind_values.push(transaction_id);
             }
         }
         
