@@ -7,7 +7,8 @@ use autometrics::autometrics;
 
 use crate::transaksi_penjualan::model::transaksi::Transaksi;
 use crate::transaksi_penjualan::model::detail_transaksi::DetailTransaksi;
-use crate::transaksi_penjualan::service::transaksi::{TransaksiService, TransaksiSearchParams};
+use crate::transaksi_penjualan::service::transaksi::TransaksiService;
+use crate::transaksi_penjualan::service::transaksi::TransaksiSearchParams;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -50,7 +51,6 @@ pub async fn get_all_transaksi(
             Ok(Json(result.data))
         }
         Err(e) => {
-            eprintln!("Error fetching transaksi: {:?}", e);
             Err((Status::InternalServerError, Json(Response { 
                 message: "Failed to fetch transaksi".to_string() 
             })))
@@ -69,8 +69,6 @@ pub async fn create_transaksi(
             Ok(Json(Response { message: "Transaksi created successfully".to_string() }))
         }
         Err(e) => {
-            eprintln!("Error creating transaksi: {:?}", e);
-            
             match e {
                 sqlx::Error::RowNotFound => {
                     Err((Status::BadRequest, Json(Response { 
@@ -117,7 +115,6 @@ pub async fn update_transaksi(
             message: "Transaksi updated successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error updating transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => (Status::Forbidden, Json(Response { 
                     message: "Transaksi cannot be modified".to_string() 
@@ -141,7 +138,6 @@ pub async fn delete_transaksi(
             message: "Transaksi deleted successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error deleting transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => (Status::Forbidden, Json(Response { 
                     message: "Transaksi cannot be deleted".to_string() 
@@ -165,7 +161,6 @@ pub async fn complete_transaksi(
             message: "Transaksi completed successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error completing transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => (Status::Forbidden, Json(Response { 
                     message: "Transaksi cannot be completed".to_string() 
@@ -189,7 +184,6 @@ pub async fn cancel_transaksi(
             message: "Transaksi cancelled successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error cancelling transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => (Status::Forbidden, Json(Response { 
                     message: "Transaksi cannot be cancelled".to_string() 
@@ -232,7 +226,6 @@ pub async fn add_detail_transaksi(
             message: "Detail transaksi added successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error adding detail transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => Err((Status::Forbidden, Json(Response { 
                     message: "Transaction cannot be modified".to_string() 
@@ -264,7 +257,6 @@ pub async fn update_detail_transaksi(
             message: "Detail transaksi updated successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error updating detail transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => Err((Status::Forbidden, Json(Response { 
                     message: "Transaction cannot be modified".to_string() 
@@ -289,7 +281,6 @@ pub async fn delete_detail_transaksi(
             message: "Detail transaksi deleted successfully".to_string() 
         })),
         Err(e) => {
-            eprintln!("Error deleting detail transaksi: {:?}", e);
             match e {
                 sqlx::Error::RowNotFound => (Status::Forbidden, Json(Response { 
                     message: "Transaction cannot be modified".to_string() 
