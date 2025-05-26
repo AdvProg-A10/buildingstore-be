@@ -1,3 +1,5 @@
+// transaksi/patterns/transaksi_state.rs
+
 use crate::transaksi_penjualan::enums::status_transaksi::StatusTransaksi;
 
 pub trait TransaksiState: Send + Sync {

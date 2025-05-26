@@ -4,6 +4,7 @@ use serde::{Serialize, Deserialize};
 use rocket::{get, post, put, delete, routes, Route, State, catch};
 use rocket::serde::json::Json;
 use rocket::http::Status;
+use autometrics::autometrics;
 
 use crate::manajemen_pembayaran::model::payment::Payment;
 use crate::manajemen_pembayaran::service::payment_service::{PaymentService, PaymentError};
@@ -36,6 +37,7 @@ pub struct ApiResponse<T> {
     pub data: Option<T>,
 }
 
+#[autometrics]
 #[post("/payments", format = "json", data = "<payment_request>")]
 pub async fn create_payment(payment_request: Json<CreatePaymentRequest>, db: &State<Pool<Any>>) -> (Status, Json<ApiResponse<Payment>>) {
     let payment_service = PaymentService::new();
@@ -116,6 +118,7 @@ pub async fn create_payment(payment_request: Json<CreatePaymentRequest>, db: &St
     }
 }
 
+#[autometrics]
 #[get("/payments/<id>")]
 pub async fn get_payment_by_id(id: String, db: &State<Pool<Any>>) -> (Status, Json<ApiResponse<Payment>>) {
     let payment_service = PaymentService::new();
@@ -148,6 +151,7 @@ pub async fn get_payment_by_id(id: String, db: &State<Pool<Any>>) -> (Status, Js
     }
 }
 
+#[autometrics]
 #[get("/payments?<status>&<method>&<transaction_id>")]
 pub async fn get_all_payments(
     status: Option<String>,
@@ -190,6 +194,8 @@ pub async fn get_all_payments(
     }
 }
 
+
+#[autometrics]
 #[put("/payments/<id>/status", format = "json", data = "<status_request>")]
 pub async fn update_payment_status(
     id: String,
@@ -240,6 +246,8 @@ pub async fn update_payment_status(
     }
 }
 
+
+#[autometrics]
 #[post("/payments/<id>/installments", format = "json", data = "<installment_request>")]
 pub async fn add_installment(
     id: String,
@@ -284,6 +292,8 @@ pub async fn add_installment(
     }
 }
 
+
+#[autometrics]
 #[delete("/payments/<id>")]
 pub async fn delete_payment(id: String, db: &State<Pool<Any>>) -> (Status, Json<ApiResponse<()>>) {
     let payment_service = PaymentService::new();

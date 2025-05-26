@@ -10,4 +10,5 @@ pub trait SupplierRepository: Send + Sync {
     async fn find_by_id(&self, id: &str, db: PoolConnection<Any>) -> Result<Supplier, sqlx::Error>;
     async fn update(&self, supplier: Supplier, db: PoolConnection<Any>) -> Result<(), sqlx::Error>;
     async fn delete(&self, id: &str, db: PoolConnection<Any>) -> Result<(), sqlx::Error>;
+    async fn find_all(&self, db: PoolConnection<Any>) -> Result<Vec<Supplier>, sqlx::Error>;
 }

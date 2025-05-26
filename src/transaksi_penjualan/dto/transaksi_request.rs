@@ -67,6 +67,9 @@ impl CreateTransaksiRequest {
             if detail.id_produk <= 0 {
                 return Err(format!("ID produk di indeks {} tidak valid", i));
             }
+            if detail.harga_satuan < 0.0 {
+                return Err(format!("Harga satuan di indeks {} tidak boleh negatif", i));
+            }
         }
 
         Ok(())
@@ -128,6 +131,25 @@ mod tests {
             nama_pelanggan: "Alice".to_string(),
             catatan: None,
             detail_transaksi: vec![],
+        };
+
+        assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_negative_price() {
+        let request = CreateTransaksiRequest {
+            id_pelanggan: 1,
+            nama_pelanggan: "Alice".to_string(),
+            catatan: None,
+            detail_transaksi: vec![
+                CreateDetailTransaksiRequest {
+                    id_produk: 1,
+                    nama_produk: "Produk A".to_string(),
+                    harga_satuan: -100.0,
+                    jumlah: 2,
+                },
+            ],
         };
 
         assert!(request.validate().is_err());

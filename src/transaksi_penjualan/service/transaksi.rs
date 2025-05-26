@@ -291,7 +291,6 @@ impl TransaksiService {
         Ok(())
     }
 
-    // STRATEGY PATTERN: Method untuk search transaksi dengan pagination
     pub async fn search_transaksi_with_pagination(
         db: Pool<Any>,
         search_params: &TransaksiSearchParams
@@ -400,45 +399,24 @@ mod tests {
 
     async fn setup() -> Pool<Any> {
         install_default_drivers();
+        
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_name = format!("sqlite::memory:service_test_{}", timestamp);
+        
         let db = AnyPoolOptions::new()
             .max_connections(1)
-            .connect("sqlite::memory:")
+            .connect(&db_name)
             .await
             .unwrap();
         
-        sqlx::query(r#"
-            CREATE TABLE transaksi (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                id_pelanggan INTEGER NOT NULL,
-                nama_pelanggan VARCHAR(255) NOT NULL,
-                tanggal_transaksi DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                total_harga DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-                status VARCHAR(50) NOT NULL DEFAULT 'MASIH_DIPROSES',
-                catatan TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        "#)
-        .execute(&db)
-        .await
-        .unwrap();
-
-        sqlx::query(r#"
-            CREATE TABLE detail_transaksi (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                id_transaksi INTEGER NOT NULL,
-                id_produk INTEGER NOT NULL,
-                harga_satuan DECIMAL(15,2) NOT NULL,
-                jumlah INTEGER NOT NULL,
-                subtotal DECIMAL(15,2) NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (id_transaksi) REFERENCES transaksi(id) ON DELETE CASCADE
-            )
-        "#)
-        .execute(&db)
-        .await
-        .unwrap();
+        sqlx::migrate!("./migrations/test")
+            .run(&db)
+            .await
+            .unwrap();
         
         db
     }
@@ -508,5 +486,64 @@ mod tests {
         let filtered = TransaksiService::filter_transaksi(transaksi_list, "pelanggan", "Alice");
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().all(|t| t.nama_pelanggan.contains("Alice")));
+    }
+
+    #[async_test]
+    async fn test_search_with_pagination() {
+        let db = setup().await;
+
+        let transaksi1 = Transaksi::new(1, "Alice".to_string(), 100000.0, None);
+        let transaksi2 = Transaksi::new(2, "Bob".to_string(), 200000.0, None);
+        let transaksi3 = Transaksi::new(1, "Alice Again".to_string(), 300000.0, None);
+
+        TransaksiService::create_transaksi(db.clone(), &transaksi1).await.unwrap();
+        TransaksiService::create_transaksi(db.clone(), &transaksi2).await.unwrap();
+        TransaksiService::create_transaksi(db.clone(), &transaksi3).await.unwrap();
+
+        let search_params = TransaksiSearchParams {
+            sort: Some("total".to_string()),
+            filter: None,
+            keyword: None,
+            status: None,
+            id_pelanggan: None,
+            page: Some(1),
+            limit: Some(2),
+        };
+
+        let result = TransaksiService::search_transaksi_with_pagination(db, &search_params).await.unwrap();
+        
+        assert_eq!(result.data.len(), 2);
+        assert_eq!(result.total_count, 3);
+        assert_eq!(result.page, 1);
+        assert_eq!(result.limit, 2);
+        assert_eq!(result.total_pages, 2);
+    }
+
+    #[async_test]
+    async fn test_detail_transaksi_operations() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(1, "Detail Test".to_string(), 0.0, None);
+        let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
+
+        let detail = DetailTransaksi::new(created_transaksi.id, 1, 100000.0, 2);
+        let created_detail = TransaksiService::add_detail_transaksi(db.clone(), &detail).await.unwrap();
+
+        assert_eq!(created_detail.id_transaksi, created_transaksi.id);
+        assert_eq!(created_detail.subtotal, 200000.0);
+
+        let details = TransaksiService::get_detail_by_transaksi_id(db.clone(), created_transaksi.id).await.unwrap();
+        assert_eq!(details.len(), 1);
+
+        // Update detail
+        let mut updated_detail = created_detail.clone();
+        updated_detail.update_jumlah(3);
+        let result = TransaksiService::update_detail_transaksi(db.clone(), &updated_detail).await.unwrap();
+        assert_eq!(result.jumlah, 3);
+        assert_eq!(result.subtotal, 300000.0);
+
+        TransaksiService::delete_detail_transaksi(db.clone(), created_detail.id, created_transaksi.id).await.unwrap();
+        let remaining_details = TransaksiService::get_detail_by_transaksi_id(db, created_transaksi.id).await.unwrap();
+        assert_eq!(remaining_details.len(), 0);
     }
 }

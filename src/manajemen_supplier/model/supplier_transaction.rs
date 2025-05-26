@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use super::supplier::Supplier;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SupplierTransaction {
     pub id: String,
     pub supplier_id: String,

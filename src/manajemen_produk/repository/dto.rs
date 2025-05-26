@@ -1,4 +1,4 @@
-use sqlx::{Pool, Postgres, PgPool, Row};
+use sqlx::{PgPool, Row};
 use std::sync::OnceLock;
 use std::error::Error as StdError;
 use std::fmt;

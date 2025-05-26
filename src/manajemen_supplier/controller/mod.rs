@@ -3,14 +3,12 @@ use rocket::routes;
 use sqlx::{Any, Pool};
 use std::sync::Arc;
 
-// Traits
 use crate::manajemen_supplier::repository::supplier_repository::SupplierRepository;
 use crate::manajemen_supplier::service::supplier_notifier::SupplierNotifier;
 use crate::manajemen_supplier::service::supplier_service::SupplierService;
 use crate::manajemen_supplier::repository::supplier_transaction_repository::SupplierTransactionRepository;
 use crate::manajemen_supplier::service::supplier_observer::SupplierObserver;
 
-// Concrete Implementations
 use crate::manajemen_supplier::repository::supplier_repository_impl::SupplierRepositoryImpl;
 use crate::manajemen_supplier::service::supplier_dispatcher::SupplierDispatcher;
 use crate::manajemen_supplier::service::supplier_service_impl::SupplierServiceImpl;
@@ -36,6 +34,7 @@ pub fn route_stage() -> AdHoc {
         let supplier_service_instance: Arc<dyn SupplierService> =
             Arc::new(SupplierServiceImpl::new(
                 supplier_repository_instance,
+                supplier_transaction_repository_instance.clone(),
                 supplier_dispatcher_instance.clone(),
             ));
         let transaction_logger_observer: Arc<dyn SupplierObserver + Send + Sync> =
@@ -47,16 +46,16 @@ pub fn route_stage() -> AdHoc {
         supplier_dispatcher_instance.register(transaction_logger_observer);
         eprintln!("[SETUP DEBUG] SupplierTransactionLogger registered with SupplierDispatcher.");
 
-        rocket // No .manage(db_pool) here
+        rocket
             .manage(supplier_service_instance)
             .manage(supplier_dispatcher_instance as Arc<dyn SupplierNotifier>)
-            // Optionally manage supplier_transaction_repository_instance
-            // .manage(supplier_transaction_repository_instance)
             .mount("/api", routes![
                 supplier_controller::save_supplier,
                 supplier_controller::delete_supplier,
                 supplier_controller::get_supplier,
-                supplier_controller::update_supplier
+                supplier_controller::update_supplier,
+                supplier_controller::get_all_suppliers,
+                supplier_controller::get_all_supplier_transactions
             ])
     })
 }

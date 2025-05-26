@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
-
-/// Struct untuk supplier
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Supplier {
     pub id: String,
     pub name: String,

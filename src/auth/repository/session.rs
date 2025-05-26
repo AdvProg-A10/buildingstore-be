@@ -11,8 +11,8 @@ impl SessionRepository {
     pub async fn create_session(mut db: PoolConnection<Any>, session: Session) -> Result<Session, sqlx::Error> {
         sqlx::query("INSERT INTO sessions (session_key, user_id, expires_at) VALUES ($1, $2, $3)")
             .bind(&session.session_key)
-            .bind(&session.user_id)
-            .bind(&session.expires_at.to_rfc3339())
+            .bind(session.user_id)
+            .bind(session.expires_at.to_rfc3339())
             .execute(&mut *db)
             .await?;
 

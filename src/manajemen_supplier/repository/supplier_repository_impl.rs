@@ -1,7 +1,7 @@
 use sqlx::{Any, pool::PoolConnection, any::AnyRow, Row};
 use crate::manajemen_supplier::model::supplier::Supplier;
 use crate::manajemen_supplier::repository::supplier_repository::SupplierRepository;
-use chrono::{DateTime, Utc};
+
 use async_trait::async_trait;
 
 pub struct SupplierRepositoryImpl;
@@ -104,6 +104,19 @@ impl SupplierRepository for SupplierRepositoryImpl {
 
         Ok(())
     }
+
+    async fn find_all(&self, mut db: PoolConnection<Any>) -> Result<Vec<Supplier>, sqlx::Error> {
+        let query = "SELECT * FROM suppliers";
+        let rows = sqlx::query(query)
+            .fetch_all(&mut *db)
+            .await?;
+
+        let mut suppliers = Vec::new();
+        for row in rows {
+            suppliers.push(Self::parse_row_to_supplier(row)?);
+        }
+        Ok(suppliers)
+    }
 }
 
 #[cfg(test)]
@@ -124,7 +137,6 @@ mod tests {
             .await
             .expect("Failed to connect to test DB");
 
-        // Run migrations for test (ensure migrations/test folder is available)
         sqlx::migrate!("migrations/test")
             .run(&db_pool)
             .await
@@ -189,11 +201,10 @@ mod tests {
         let (repository, db_pool) = setup_repository().await;
         let db_conn = db_pool.acquire().await.unwrap();
         let result = repository.find_by_id("non-existent-id", db_conn).await;
-        
-        // Should return an error (RowNotFound) when supplier doesn't exist
+    
         assert!(result.is_err());
         match result.unwrap_err() {
-            sqlx::Error::RowNotFound => {}, // Expected error
+            sqlx::Error::RowNotFound => {},
             _ => panic!("Expected RowNotFound error"),
         }
     }
@@ -250,6 +261,92 @@ mod tests {
         assert!(result.is_ok());
         let db_conn = db_pool.acquire().await.unwrap();
         let result = repository.find_by_id(&supplier_id, db_conn).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            sqlx::Error::RowNotFound => {},
+            _ => panic!("Expected RowNotFound error"),
+        }
+    }
+
+        #[tokio::test]
+    async fn test_find_all_suppliers_empty() {
+        let (repository, db_pool) = setup_repository().await;
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = repository.find_all(db_conn).await;
+        
+        assert!(result.is_ok());
+        let suppliers = result.unwrap();
+        assert!(suppliers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_find_all_suppliers_multiple() {
+        let (repository, db_pool) = setup_repository().await;
+        let supplier1 = Supplier {
+            id: format!("SUP-{}", Uuid::new_v4()),
+            name: "PT. Ayam".to_string(),
+            jenis_barang: "ayam".to_string(),
+            jumlah_barang: 1000,
+            resi: "2306206282".to_string(),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+
+        let supplier2 = Supplier {
+            id: format!("SUP-{}", Uuid::new_v4()),
+            name: "PT. Sapi".to_string(),
+            jenis_barang: "sapi".to_string(),
+            jumlah_barang: 500,
+            resi: "2306206283".to_string(),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+
+        let db_conn = db_pool.acquire().await.unwrap();
+        repository.save(supplier1.clone(), db_conn).await.unwrap();
+        
+        let db_conn = db_pool.acquire().await.unwrap();
+        repository.save(supplier2.clone(), db_conn).await.unwrap();
+
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = repository.find_all(db_conn).await;
+        
+        assert!(result.is_ok());
+        let suppliers = result.unwrap();
+        assert_eq!(suppliers.len(), 2);
+        
+        let ids: Vec<String> = suppliers.iter().map(|s| s.id.clone()).collect();
+        assert!(ids.contains(&supplier1.id));
+        assert!(ids.contains(&supplier2.id));
+    }
+
+    #[tokio::test]
+    async fn test_update_nonexistent_supplier() {
+        let (repository, db_pool) = setup_repository().await;
+        
+        let nonexistent_supplier = Supplier {
+            id: format!("SUP-{}", Uuid::new_v4()),
+            name: "Non-existent".to_string(),
+            jenis_barang: "none".to_string(),
+            jumlah_barang: 0,
+            resi: "000".to_string(),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = repository.update(nonexistent_supplier, db_conn).await;
+        
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            sqlx::Error::RowNotFound => {},
+            _ => panic!("Expected RowNotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_supplier() {
+        let (repository, db_pool) = setup_repository().await;
+        let db_conn = db_pool.acquire().await.unwrap();
+        let result = repository.delete("non-existent-id", db_conn).await;
+        
         assert!(result.is_err());
         match result.unwrap_err() {
             sqlx::Error::RowNotFound => {},

@@ -1,4 +1,4 @@
-use crate::manajemen_supplier::model::supplier::Supplier;
+use crate::manajemen_supplier::model::{supplier::Supplier, supplier_transaction::SupplierTransaction};
 use async_trait::async_trait;
 use mockall::automock;
 use sqlx::{Any, Pool};
@@ -25,7 +25,9 @@ pub trait SupplierService: Send + Sync {
         resi: String,
     ) -> Result<(), String>;
 
-    // These remain the same
     async fn delete_supplier(&self, db_pool: Pool<Any>, id: &str) -> Result<(), String>;
     async fn get_supplier(&self, db_pool: Pool<Any>, id: &str) -> Result<Option<Supplier>, String>;
+    async fn get_all_suppliers(&self, db_pool: Pool<Any>) -> Result<Vec<Supplier>, String>;
+    async fn get_all_supplier_transactions(&self, db_pool: Pool<Any>) -> Result<Vec<SupplierTransaction>, String>;
+
 }

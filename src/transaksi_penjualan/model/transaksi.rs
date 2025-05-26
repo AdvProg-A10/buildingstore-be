@@ -8,7 +8,7 @@ pub struct Transaksi {
     pub id: i32,
     pub id_pelanggan: i32,
     pub nama_pelanggan: String,
-    pub tanggal_transaksi: NaiveDateTime,
+    pub tanggal_transaksi: String,  
     pub total_harga: f64,
     pub status: StatusTransaksi,
     pub catatan: Option<String>,
@@ -25,7 +25,7 @@ impl Transaksi {
             id: 0,
             id_pelanggan,
             nama_pelanggan,
-            tanggal_transaksi: Utc::now().naive_utc(),
+            tanggal_transaksi: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             total_harga,
             status: StatusTransaksi::MasihDiproses,
             catatan,
@@ -107,6 +107,10 @@ impl Transaksi {
                 "reopen".to_string(), 
             ],
         }
+    }
+
+    pub fn get_tanggal_as_datetime(&self) -> Result<NaiveDateTime, chrono::ParseError> {
+        NaiveDateTime::parse_from_str(&self.tanggal_transaksi, "%Y-%m-%d %H:%M:%S")
     }
 }
 
@@ -202,5 +206,18 @@ mod test {
 
         transaksi.update_total_harga(175000.0);
         assert_eq!(transaksi.total_harga, 175000.0);
+    }
+
+    #[test]
+    fn test_datetime_parsing() {
+        let transaksi = Transaksi::new(
+            1,
+            "Test DateTime".to_string(),
+            100000.0,
+            None,
+        );
+
+        let parsed_datetime = transaksi.get_tanggal_as_datetime();
+        assert!(parsed_datetime.is_ok());
     }
 }
