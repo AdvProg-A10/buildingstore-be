@@ -15,7 +15,7 @@ pub async fn ambil_semua_produk(pool: &AnyPool) -> Result<Vec<Produk>, Repositor
             row.try_get("kategori")?,
             row.try_get("harga")?,
             row.try_get::<i32, _>("stok")? as u32,
-            row.try_get("deskripsi")?,
+            row.try_get("deskripsi").map_or(None, |v: String| Some(v)),
         ));
     }
     
@@ -35,7 +35,7 @@ pub async fn ambil_produk_by_id(pool: &AnyPool, id: i64) -> Result<Option<Produk
             row.try_get("kategori")?,
             row.try_get("harga")?,
             row.try_get::<i32, _>("stok")? as u32,
-            row.try_get("deskripsi")?,
+            row.try_get("deskripsi").map_or(None, |v: String| Some(v)),
         ))),
         None => Ok(None),
     }
