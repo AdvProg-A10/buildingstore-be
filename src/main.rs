@@ -48,8 +48,8 @@ async fn rocket() -> _ {
     let db_pool = sqlx::AnyPool::connect(&database_url).await.unwrap();
     //sqlx::migrate!()
       //  .run(&db_pool)
-      //  .await
-      //  .expect("Failed to run migrations");    
+       // .await
+        //.expect("Failed to run migrations");    
 
     rocket::build()
         .manage(reqwest::Client::builder().build().unwrap())
