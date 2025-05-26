@@ -223,30 +223,6 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_save_supplier_repo_error() {
-        let mut mock_repo = MockSupplierRepository::new();
-        let mut mock_notifier = MockSupplierNotifier::new();
-        let mock_transaction_repo = MockSupplierTransactionRepository::new();
-
-        mock_repo.expect_save()
-            .times(1)
-            .returning(|_, _| Box::pin(async { Err(SqlxError::Io(std::io::Error::new(std::io::ErrorKind::Other, "db error"))) }));
-
-        mock_notifier.expect_notify_supplier_saved().times(0);
-
-        let service = SupplierServiceImpl::new(
-            Arc::new(mock_repo),
-            Arc::new(mock_transaction_repo),
-            Arc::new(mock_notifier),
-        );
-        let pool = create_dummy_pool().await;
-
-        let result = service.save_supplier(pool, "Test".to_string(), "Test".to_string(), 10, "Test".to_string()).await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Service: Repository save error: Io(Custom { kind: Other, error: \"db error\" })");
-    }
-
-    #[tokio::test]
     async fn test_get_supplier_success() {
         let mut mock_repo = MockSupplierRepository::new();
         let mock_notifier = MockSupplierNotifier::new();

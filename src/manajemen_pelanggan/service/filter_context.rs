@@ -6,7 +6,13 @@ pub struct FilterContext<'a> {
     filter_strategy: Box<dyn FilterStrategy + 'a>,
 }
 
-impl<'a> FilterContext<'a> {
+impl Default for FilterContext<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FilterContext<'_> {
     pub fn new() -> Self {
         FilterContext {
             filter_strategy: Box::new(FilterByNama),

@@ -29,15 +29,12 @@ impl SupplierObserver for SupplierTransactionLogger {
         match self.db_pool.acquire().await {
             Ok(conn) => {
                 if let Err(err) = self.trx_repo.save(transaction_to_save, conn).await {
-                    // TODO: Replace with a robust logging framework (e.g., tracing::error! or log::error!)
                     eprintln!("[ERROR] Failed to log supplier transaction for supplier ID {}: {}", supplier.id, err);
                 } else {
-                    // TODO: Replace with a robust logging framework (e.g., tracing::info! or log::info!)
                     println!("[INFO] Successfully logged transaction for supplier ID {}", supplier.id);
                 }
             }
             Err(err) => {
-                // TODO: Replace with a robust logging framework
                 eprintln!("[ERROR] Failed to acquire DB connection for logging transaction for supplier ID {}: {}", supplier.id, err);
             }
         }

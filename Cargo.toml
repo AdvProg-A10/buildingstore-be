@@ -29,6 +29,7 @@ log = "0.4"
 env_logger = "0.10"
 mockall = "0.11"
 autometrics = { version = "2.0.0", features = ["prometheus-exporter"] }
+rust_decimal = "1.37.1"
 
 [build-dependencies]
 tonic-build = "0.10"

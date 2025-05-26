@@ -7,7 +7,13 @@ pub struct SortContext<'a> {
     sort_strategy: Box<dyn SortStrategy + 'a>,
 }
 
-impl<'a> SortContext<'a> {
+impl Default for SortContext<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SortContext<'_> {
     pub fn new() -> Self {
         SortContext {
             sort_strategy: Box::new(SortByNama),

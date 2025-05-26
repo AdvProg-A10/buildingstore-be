@@ -27,10 +27,8 @@ pub async fn get_all_pelanggan(_user: AuthenticatedUser, db: &State<Pool<Any>>, 
     if let Some(sort_strategy) = &sort {
         pelanggan = PelangganService::sort_pelanggan(pelanggan, sort_strategy);
     }
-    if let Some(filter_strategy) = &filter {
-        if let Some(keyword_value) = &keyword {
-            pelanggan = PelangganService::filter_pelanggan(pelanggan, filter_strategy, keyword_value);
-        }
+    if let (Some(filter_strategy), Some(keyword_value)) = (&filter, &keyword) {
+        pelanggan = PelangganService::filter_pelanggan(pelanggan, filter_strategy, keyword_value);
     }
     Ok(Json(pelanggan))
 }

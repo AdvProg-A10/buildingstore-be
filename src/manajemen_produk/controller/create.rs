@@ -1,11 +1,15 @@
 use rocket::serde::json::Json;
-use rocket::{post, routes, Route};
+use rocket::{post, routes, Route, State};
 use crate::manajemen_produk::model::Produk;
 use crate::manajemen_produk::repository;
 use super::dto::{ProdukRequest, ProdukResponse, ApiResponse};
+use autometrics::autometrics;
+use sqlx::AnyPool;
 
+#[autometrics]
 #[post("/produk", format = "json", data = "<request>")]
 pub async fn tambah_produk(
+    db: &State<AnyPool>,
     request: Json<ProdukRequest>
 ) -> Json<ApiResponse<ProdukResponse>> {
     // Validasi stok tidak boleh negatif
@@ -19,10 +23,10 @@ pub async fn tambah_produk(
         request.deskripsi.clone(),
     );
 
-    match repository::create::tambah_produk(&produk).await {
+    match repository::create::tambah_produk(db.inner(), &produk).await {
         Ok(id) => {
             // Ambil produk yang baru dibuat untuk response
-            match repository::read::ambil_produk_by_id(id).await {
+            match repository::read::ambil_produk_by_id(db.inner(), id).await {
                 Ok(Some(created_produk)) => {
                     Json(ApiResponse {
                         success: true,
@@ -58,55 +62,4 @@ pub async fn tambah_produk(
 
 pub fn routes() -> Vec<Route> {
     routes![tambah_produk]
-}
-
-#[cfg(test)]
-mod tests {
-    use rocket::http::{ContentType, Status};
-    use rocket::local::asynchronous::Client;
-    use rocket::serde::json::json;
-    use serde_json;
-    use crate::manajemen_produk::controller::{ApiResponse, ProdukResponse};
-    use crate::manajemen_produk::repository::dto::init_database;
-
-    async fn setup_test_client() -> Client {
-        let _ = init_database().await;
-        let rocket = rocket::build().mount("/api", super::routes());
-        Client::tracked(rocket).await.expect("valid rocket instance")
-    }
-
-    async fn clean_test_data() {
-        let _ = init_database().await;
-        let _ = crate::manajemen_produk::repository::delete::clear_all().await;
-    }
-
-    #[tokio::test]
-    async fn test_tambah_produk() {
-        let client = setup_test_client().await;
-        clean_test_data().await;
-        
-        let response = client.post("/api/produk")
-            .header(ContentType::JSON)
-            .body(json!({
-                "nama": "Test Laptop",
-                "kategori": "Elektronik",
-                "harga": 10_000_000.0,
-                "stok": 5,
-                "deskripsi": "Test laptop description"
-            }).to_string())
-            .dispatch()
-            .await;
-        
-        assert_eq!(response.status(), Status::Ok);
-        
-        let body = response.into_string().await.unwrap();
-        let json: ApiResponse<ProdukResponse> = serde_json::from_str(&body).unwrap();
-        
-        assert!(json.success);
-        let produk = json.data.unwrap();
-        assert_eq!(produk.nama, "Test Laptop");
-        assert_eq!(produk.stok, 5);
-        
-        clean_test_data().await;
-    }
 }

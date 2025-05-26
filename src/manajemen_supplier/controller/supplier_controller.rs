@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::manajemen_supplier::model::supplier::Supplier;
 use crate::manajemen_supplier::model::supplier_transaction::SupplierTransaction;
 use crate::manajemen_supplier::service::supplier_service::SupplierService;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct SupplierRequest {
@@ -15,6 +16,7 @@ pub struct SupplierRequest {
     pub jumlah_barang: i32,
     pub resi: String,
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct ApiResponse<T> {
@@ -29,9 +31,9 @@ pub struct ApiResponse<T> {
 pub async fn save_supplier(
     request_data: Json<SupplierRequest>,
     db_pool: &State<Pool<Any>>,
-    service: &State<Arc<dyn SupplierService>>, 
+    service: &State<Arc<dyn SupplierService>>,
 ) -> (Status, Json<ApiResponse<Supplier>>) {
-    match service.inner().save_supplier( // Use .inner() to get the Arc, then call method
+    match service.inner().save_supplier(
         db_pool.inner().clone(),
         request_data.name.clone(),
         request_data.jenis_barang.clone(),
@@ -67,7 +69,7 @@ pub async fn save_supplier(
 pub async fn get_supplier(
     suppliers_id: String,
     db_pool: &State<Pool<Any>>,
-    service: &State<Arc<dyn SupplierService>>, 
+    service: &State<Arc<dyn SupplierService>>,
 ) -> (Status, Json<ApiResponse<Supplier>>) {
     match service.inner().get_supplier(db_pool.inner().clone(), &suppliers_id).await {
         Ok(Some(supplier_model)) => (
@@ -238,7 +240,7 @@ pub async fn get_all_suppliers(
 }
 
 #[autometrics]
-#[get("/supplier-transactions")] 
+#[get("/supplier-transactions")]
 pub async fn get_all_supplier_transactions(
     db_pool: &State<Pool<Any>>,
     service: &State<Arc<dyn SupplierService>>,
@@ -273,6 +275,8 @@ pub fn supplier_routes() -> Vec<rocket::Route> {
         get_supplier,
         update_supplier,
         delete_supplier,
+        get_all_suppliers,
+        get_all_supplier_transactions
     ]
 }
 
@@ -281,13 +285,13 @@ mod tests {
     use super::*;
     use rocket::local::asynchronous::Client;
     use rocket::http::Status;
-    use rocket::{uri, Rocket, async_test}; 
+    use rocket::{uri, Rocket, async_test};
     use sqlx::any::{install_default_drivers, AnyPoolOptions};
     use std::sync::Arc;
+    use chrono::Utc;
     use uuid::Uuid;
-
     use crate::manajemen_supplier::model::supplier::Supplier;
-    use crate::manajemen_supplier::repository::supplier_transaction_repository::SupplierTransactionRepository;
+    use crate::manajemen_supplier::repository::supplier_transaction_repository::{SupplierTransactionRepository};
     use crate::manajemen_supplier::repository::supplier_transaction_repository_impl::SupplierTransactionRepositoryImpl;
     use crate::manajemen_supplier::service::supplier_service::SupplierService;
     use crate::manajemen_supplier::service::supplier_service_impl::SupplierServiceImpl;
@@ -308,35 +312,61 @@ mod tests {
             .expect("Failed to deserialize ApiResponse from body")
     }
 
-    async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
-        install_default_drivers();
-        let db_pool = AnyPoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test in-memory SQLite DB");
-
-        sqlx::migrate!("migrations/test")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run supplier database migrations for tests. Check path and SQL files.");
-
-        let supplier_repo: Arc<dyn SupplierRepository> = Arc::new(SupplierRepositoryImpl::new());
-        let transaction_repo: Arc<dyn SupplierTransactionRepository> = Arc::new(SupplierTransactionRepositoryImpl::new());
-        let supplier_event_dispatcher: Arc<dyn SupplierNotifier> = Arc::new(SupplierDispatcher::new());
-
-        let supplier_service_instance: Arc<dyn SupplierService> = Arc::new(SupplierServiceImpl::new(
-            supplier_repo,
-            transaction_repo,
-            supplier_event_dispatcher.clone(),
-        ));
-        
-        rocket::build()
-            .manage(db_pool) 
-            .manage(supplier_service_instance.clone())
-            .manage(supplier_event_dispatcher.clone())  
-            .mount("/", supplier_routes())
+    fn create_test_transaction_model(supplier: &Supplier) -> SupplierTransaction {
+        SupplierTransaction {
+            id: format!("TRX-INTEG-{}", Uuid::new_v4()),
+            supplier_id: supplier.id.clone(),
+            supplier_name: supplier.name.clone(),
+            jenis_barang: supplier.jenis_barang.clone(),
+            jumlah_barang: supplier.jumlah_barang,
+            pengiriman_info: format!("Integ Test Info for {}", supplier.resi.clone()),
+            tanggal_transaksi: Utc::now().to_rfc3339(),
+        }
     }
+
+
+async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
+    install_default_drivers();
+
+    let unique_db_id = Uuid::new_v4().simple().to_string();
+    let db_connection_string = format!("sqlite:file:memtest_{}?mode=memory&cache=shared", unique_db_id);
+
+    let db_pool = AnyPoolOptions::new()
+        .max_connections(5) 
+        .acquire_timeout(std::time::Duration::from_secs(10))
+        .connect(&db_connection_string)
+        .await
+        .expect(&format!("Failed to connect to unique test in-memory SQLite DB: {}", db_connection_string));
+
+
+    sqlx::migrate!("migrations/test")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run supplier database migrations for tests. Check path and SQL files.");
+
+    let supplier_repo: Arc<dyn SupplierRepository> = Arc::new(SupplierRepositoryImpl::new());
+    let transaction_repo: Arc<dyn SupplierTransactionRepository> = Arc::new(SupplierTransactionRepositoryImpl::new());
+    let supplier_event_dispatcher: Arc<dyn SupplierNotifier> = Arc::new(SupplierDispatcher::new());
+
+    let supplier_service_instance: Arc<dyn SupplierService> = Arc::new(SupplierServiceImpl::new(
+        supplier_repo,
+        transaction_repo,
+        supplier_event_dispatcher.clone(),
+    ));
+
+    rocket::build()
+        .manage(db_pool) 
+        .manage(supplier_service_instance.clone())
+        .manage(supplier_event_dispatcher.clone())
+        .mount("/", routes![
+            save_supplier,
+            get_supplier,
+            update_supplier,
+            delete_supplier,
+            get_all_suppliers,
+            get_all_supplier_transactions
+        ])
+}
 
     fn sample_supplier_request(name_suffix: &str) -> SupplierRequest {
         SupplierRequest {
@@ -363,7 +393,7 @@ mod tests {
         let post_api_resp = deserialize_response_body::<Supplier>(post_response).await;
         assert!(post_api_resp.success);
         let created_supplier = post_api_resp.data.expect("Supplier data should be present on creation");
-        
+
         assert_eq!(created_supplier.name, create_req.name);
         assert!(!created_supplier.id.is_empty());
 
@@ -393,7 +423,7 @@ mod tests {
         assert!(!api_resp.success);
         assert!(api_resp.message.is_some() && api_resp.message.unwrap().contains("not found"));
     }
-    
+
 
     #[async_test]
     async fn test_integ_update_supplier() {
@@ -409,14 +439,14 @@ mod tests {
         let update_payload = SupplierRequest {
             name: "Updated Supplier Name".to_string(),
             jenis_barang: "Updated Goods".to_string(),
-            jumlah_barang: 200, 
+            jumlah_barang: 200,
             resi: "UPDATED-RESI-001".to_string(),
         };
         let update_response = client.put(uri!(update_supplier(id = supplier_id_to_update.clone())))
             .json(&update_payload)
             .dispatch()
             .await;
-        
+
         assert_eq!(update_response.status(), Status::Ok);
         let updated_api_resp = deserialize_response_body::<Supplier>(update_response).await;
         assert!(updated_api_resp.success);
@@ -452,6 +482,94 @@ mod tests {
         let get_response_after_delete = client.get(uri!(get_supplier(suppliers_id = supplier_id_to_delete))).dispatch().await;
         assert_eq!(get_response_after_delete.status(), Status::NotFound);
     }
-
     
+    #[async_test]
+    async fn test_integ_get_all_suppliers_empty() {
+        let rocket_instance = setup_rocket_instance_for_supplier_tests().await;
+        let client = Client::tracked(rocket_instance).await.expect("Valid Rocket instance");
+
+        let response = client.get(uri!(get_all_suppliers)).dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+
+        let api_resp = deserialize_response_body::<Vec<Supplier>>(response).await;
+        assert!(api_resp.success);
+        assert!(api_resp.data.expect("Data should be present for get_all_suppliers").is_empty());
+    }
+
+    #[async_test]
+    async fn test_integ_get_all_suppliers_multiple() {
+        let rocket_instance = setup_rocket_instance_for_supplier_tests().await;
+        let client = Client::tracked(rocket_instance).await.expect("Valid Rocket instance");
+
+        let req1 = sample_supplier_request("GetAll1");
+        let resp1 = client.post(uri!(save_supplier)).json(&req1).dispatch().await;
+        assert_eq!(resp1.status(), Status::Created);
+        let supplier1_id = deserialize_response_body::<Supplier>(resp1).await.data.unwrap().id;
+
+
+        let req2 = sample_supplier_request("GetAll2");
+        let resp2 = client.post(uri!(save_supplier)).json(&req2).dispatch().await;
+        assert_eq!(resp2.status(), Status::Created);
+        let supplier2_id = deserialize_response_body::<Supplier>(resp2).await.data.unwrap().id;
+
+        let response = client.get(uri!(get_all_suppliers)).dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+
+        let api_resp = deserialize_response_body::<Vec<Supplier>>(response).await;
+        assert!(api_resp.success);
+        let suppliers = api_resp.data.expect("Data should be present");
+        assert_eq!(suppliers.len(), 2);
+
+        assert!(suppliers.iter().any(|s| s.id == supplier1_id));
+        assert!(suppliers.iter().any(|s| s.id == supplier2_id));
+    }
+
+    #[async_test]
+    async fn test_integ_get_all_supplier_transactions_empty() {
+        let rocket_instance = setup_rocket_instance_for_supplier_tests().await;
+        let client = Client::tracked(rocket_instance).await.expect("Valid Rocket instance");
+
+        let response = client.get(uri!(get_all_supplier_transactions)).dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+
+        let api_resp = deserialize_response_body::<Vec<SupplierTransaction>>(response).await;
+        assert!(api_resp.success);
+        assert!(api_resp.data.expect("Data should be present for get_all_supplier_transactions").is_empty());
+    }
+
+  #[async_test]
+    async fn test_integ_get_all_supplier_transactions_multiple() {
+        let rocket_instance_build = setup_rocket_instance_for_supplier_tests().await;
+        let db_pool_for_seeding = rocket_instance_build.state::<Pool<Any>>().unwrap().clone();
+        let client = Client::tracked(rocket_instance_build).await.expect("Valid Rocket instance");
+
+        let supplier_req = sample_supplier_request("ForTransactionTest");
+        let post_supplier_resp = client.post(uri!(save_supplier)).json(&supplier_req).dispatch().await;
+        assert_eq!(post_supplier_resp.status(), Status::Created);
+        let created_supplier = deserialize_response_body::<Supplier>(post_supplier_resp).await.data.unwrap();
+
+        let transaction_repo_direct = SupplierTransactionRepositoryImpl::new();
+
+        let transaction1 = create_test_transaction_model(&created_supplier);
+        let transaction1_id = transaction1.id.clone();
+        let conn1 = db_pool_for_seeding.acquire().await.unwrap();
+        transaction_repo_direct.save(transaction1, conn1).await.expect("Failed to save transaction1 for test");
+
+        let transaction2 = create_test_transaction_model(&created_supplier);
+        let transaction2_id = transaction2.id.clone();
+        let conn2 = db_pool_for_seeding.acquire().await.unwrap();
+        transaction_repo_direct.save(transaction2, conn2).await.expect("Failed to save transaction2 for test");
+
+        let response = client.get(uri!(get_all_supplier_transactions)).dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+
+        let api_resp = deserialize_response_body::<Vec<SupplierTransaction>>(response).await;
+        assert!(api_resp.success);
+        let transactions = api_resp.data.expect("Data should be present");
+        assert_eq!(transactions.len(), 2);
+
+        assert!(transactions.iter().any(|t| t.id == transaction1_id));
+        assert!(transactions.iter().any(|t| t.id == transaction2_id));
+        assert!(transactions.iter().all(|t| t.supplier_id == created_supplier.id));
+    }
 }

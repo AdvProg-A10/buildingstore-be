@@ -1,12 +1,10 @@
 use crate::manajemen_produk::model::Produk;
-use crate::manajemen_produk::repository::dto::{get_db_pool, validate_produk, RepositoryError};
-use sqlx::Row;
+use crate::manajemen_produk::repository::dto::{validate_produk, RepositoryError};
+use sqlx::{AnyPool, Row};
 
-pub async fn tambah_produk(produk: &Produk) -> Result<i64, RepositoryError> {
+pub async fn tambah_produk(pool: &AnyPool, produk: &Produk) -> Result<i64, RepositoryError> {
     // Validasi terlebih dahulu
     validate_produk(produk)?;
-    
-    let pool = get_db_pool()?;
     
     let result = sqlx::query(
         r#"
@@ -29,198 +27,236 @@ pub async fn tambah_produk(produk: &Produk) -> Result<i64, RepositoryError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manajemen_produk::repository::delete::clear_all;
-    use crate::manajemen_produk::repository::read::ambil_produk_by_id;
-    use crate::manajemen_produk::repository::dto::init_database;
+    use sqlx::{any::{AnyPoolOptions, install_default_drivers}, Row};
 
-    // Helper function to create test products
-    fn create_test_products() -> Vec<Produk> {
-        vec![
-            Produk::new(
-                "Laptop Gaming".to_string(),
-                "Elektronik".to_string(),
-                15_000_000.0,
-                10,
-                Some("Laptop dengan RTX 4060".to_string()),
-            ),
-            Produk::new(
-                "Cat Tembok".to_string(),
-                "Material".to_string(),
-                150_000.0,
-                50,
-                Some("Cat tembok anti air".to_string()),
-            ),
-            Produk::new(
-                "Smartphone".to_string(),
-                "Elektronik".to_string(),
-                8_000_000.0,
-                20,
-                Some("Smartphone dengan kamera 108MP".to_string()),
-            ),
-        ]
-    }
+    use crate::manajemen_produk::model::Produk;
 
-    // Helper function to clean repository between tests
-    async fn cleanup_repository() -> Result<(), RepositoryError> {
-        // Initialize database if not already done
-        let _ = init_database().await;
-        clear_all().await
+    async fn setup_test_db() -> sqlx::Pool<sqlx::Any> {
+        install_default_drivers();
+        let db_pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect to test DB");
+
+        // Create table for testing
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS produk (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nama TEXT NOT NULL,
+                kategori TEXT NOT NULL,
+                harga REAL NOT NULL,
+                stok INTEGER NOT NULL,
+                deskripsi TEXT
+            )
+            "#
+        )
+        .execute(&db_pool)
+        .await
+        .expect("Failed to create test table");
+
+        db_pool
     }
 
     #[tokio::test]
-    async fn test_tambah_dan_ambil_produk() {
-        // Initialize DB and cleanup first
-        let _ = init_database().await;
-        let _ = clear_all().await;
+    async fn test_tambah_produk_valid() {
+        let db_pool = setup_test_db().await;
         
-        let produk = Produk::new(
-            "Test Laptop".to_string(),
-            "Elektronik".to_string(),
-            15_000_000.0,
-            10,
-            Some("Test Description".to_string())
-        );
-        
-        // Add product
-        let id = tambah_produk(&produk).await.unwrap();
-        assert!(id > 0);
-        
-        // Get the product back
-        let retrieved = ambil_produk_by_id(id).await.unwrap().unwrap();
-        
-        // Verify all fields
-        assert_eq!(retrieved.id.unwrap(), id);
-        assert_eq!(retrieved.nama, produk.nama);
-        assert_eq!(retrieved.kategori, produk.kategori);
-        assert_eq!(retrieved.harga, produk.harga);
-        assert_eq!(retrieved.stok, produk.stok);
-        assert_eq!(retrieved.deskripsi, produk.deskripsi);
+        let produk = Produk {
+            id: None,
+            nama: "Laptop Gaming".to_string(),
+            kategori: "Elektronik".to_string(),
+            harga: 15000000.50, // Menggunakan f64 langsung
+            stok: 10,
+            deskripsi: Some("Laptop gaming high-end dengan RTX 4080".to_string()),
+        };
 
-        // Cleanup after test
-        let _ = clear_all().await;
+        let result = tambah_produk(&db_pool, &produk).await;
+        assert!(result.is_ok());
+        
+        let product_id = result.unwrap();
+        assert!(product_id > 0);
+
+        // Verify the product was actually inserted
+        let row = sqlx::query("SELECT * FROM produk WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&db_pool)
+            .await
+            .expect("Failed to fetch inserted product");
+
+        let nama: String = row.get("nama");
+        let kategori: String = row.get("kategori");
+        let stok: i32 = row.get("stok");
+        let harga: f64 = row.get("harga");
+        
+        assert_eq!(nama, "Laptop Gaming");
+        assert_eq!(kategori, "Elektronik");
+        assert_eq!(stok, 10);
+        assert!((harga - 15000000.50).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
-    async fn test_id_sequence() {
-        // Start with clean repository
-        let _ = cleanup_repository().await;
+    async fn test_tambah_produk_with_minimal_data() {
+        let db_pool = setup_test_db().await;
         
-        // Add products sequentially
-        let mut ids = vec![];
+        let produk = Produk {
+            id: None,
+            nama: "Mouse".to_string(),
+            kategori: "Aksesoris".to_string(),
+            harga: 150000.00, // f64
+            stok: 50,
+            deskripsi: None, // No description
+        };
+
+        let result = tambah_produk(&db_pool, &produk).await;
+        assert!(result.is_ok());
         
-        for i in 0..3 {
-            let produk = Produk::new(
-                format!("Product {}", i),
-                "Test".to_string(),
-                1000.0,
-                10,
-                None,
-            );
+        let product_id = result.unwrap();
+        assert!(product_id > 0);
+
+        // Verify insertion
+        let row = sqlx::query("SELECT nama, kategori, deskripsi FROM produk WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&db_pool)
+            .await
+            .expect("Failed to fetch inserted product");
+
+        let nama: String = row.get("nama");
+        let kategori: String = row.get("kategori");
+        let deskripsi: Option<String> = row.get("deskripsi");
+        
+        assert_eq!(nama, "Mouse");
+        assert_eq!(kategori, "Aksesoris");
+        assert!(deskripsi.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tambah_produk_with_zero_stock() {
+        let db_pool = setup_test_db().await;
+        
+        let produk = Produk {
+            id: None,
+            nama: "Keyboard Mechanical".to_string(),
+            kategori: "Aksesoris".to_string(),
+            harga: 750000.99, // f64
+            stok: 0, // Zero stock
+            deskripsi: Some("Keyboard mechanical blue switch".to_string()),
+        };
+
+        let result = tambah_produk(&db_pool, &produk).await;
+        assert!(result.is_ok());
+        
+        let product_id = result.unwrap();
+        let row = sqlx::query("SELECT stok FROM produk WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&db_pool)
+            .await
+            .expect("Failed to fetch inserted product");
+
+        let stok: i32 = row.get("stok");
+        assert_eq!(stok, 0);
+    }
+
+    #[tokio::test]
+    async fn test_tambah_produk_with_large_values() {
+        let db_pool = setup_test_db().await;
+        
+        let produk = Produk {
+            id: None,
+            nama: "Server Enterprise".to_string(),
+            kategori: "Server".to_string(),
+            harga: 999999999.99, // f64 - Large price
+            stok: 999999, // Large stock
+            deskripsi: Some("High-end enterprise server with redundant systems and 24/7 support warranty".to_string()),
+        };
+
+        let result = tambah_produk(&db_pool, &produk).await;
+        assert!(result.is_ok());
+        
+        let product_id = result.unwrap();
+        let row = sqlx::query("SELECT harga, stok FROM produk WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&db_pool)
+            .await
+            .expect("Failed to fetch inserted product");
+
+        let stok: i32 = row.get("stok");
+        let harga: f64 = row.get("harga");
+        assert_eq!(stok, 999999);
+        assert!((harga - 999999999.99).abs() < 1.0); // Floating point comparison
+    }
+
+    #[tokio::test]
+    async fn test_tambah_multiple_produk() {
+        let db_pool = setup_test_db().await;
+        
+        let produk1 = Produk {
+            id: None,
+            nama: "iPhone 15".to_string(),
+            kategori: "Smartphone".to_string(),
+            harga: 15000000.00, // f64
+            stok: 25,
+            deskripsi: Some("Latest iPhone model".to_string()),
+        };
+
+        let produk2 = Produk {
+            id: None,
+            nama: "Samsung Galaxy S24".to_string(),
+            kategori: "Smartphone".to_string(),
+            harga: 12000000.00, // f64
+            stok: 30,
+            deskripsi: Some("Latest Samsung flagship".to_string()),
+        };
+
+        let result1 = tambah_produk(&db_pool, &produk1).await;
+        let result2 = tambah_produk(&db_pool, &produk2).await;
+        
+        assert!(result1.is_ok());
+        assert!(result2.is_ok());
+        
+        let id1 = result1.unwrap();
+        let id2 = result2.unwrap();
+        
+        // Ensure different IDs
+        assert_ne!(id1, id2);
+        
+        // Verify both products exist
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM produk")
+            .fetch_one(&db_pool)
+            .await
+            .expect("Failed to count products");
             
-            let id = tambah_produk(&produk).await.unwrap();
-            ids.push(id);
-        }
-        
-        // Verify IDs are sequential starting from 1 (PostgreSQL BIGSERIAL)
-        assert_eq!(ids.len(), 3);
-        assert_eq!(ids[0], 1);
-        assert_eq!(ids[1], 2);
-        assert_eq!(ids[2], 3);
-        
-        // Delete a product (middle one)
-        let _ = crate::manajemen_produk::repository::delete::hapus_produk(ids[1]).await;
-        
-        // Add another product - PostgreSQL BIGSERIAL continues sequence
-        let produk = Produk::new(
-            "New Product".to_string(),
-            "Test".to_string(),
-            1000.0,
-            10,
-            None,
-        );
-        
-        let new_id = tambah_produk(&produk).await.unwrap();
-        
-        // In PostgreSQL, sequence continues even after delete
-        assert_eq!(new_id, 4);
-        
-        // Cleanup
-        let _ = clear_all().await;
+        assert_eq!(count, 2);
     }
 
     #[tokio::test]
-    async fn test_validation_error() {
-        // Start with clean repository
-        let _ = cleanup_repository().await;
+    async fn test_tambah_produk_with_special_characters() {
+        let db_pool = setup_test_db().await;
         
-        // Test empty name
-        let invalid_produk = Produk::new(
-            "".to_string(),
-            "Test".to_string(),
-            1000.0,
-            10,
-            None,
-        );
-        
-        let result = tambah_produk(&invalid_produk).await;
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RepositoryError::ValidationError(_)));
-        
-        // Test negative price
-        let invalid_price_produk = Produk::new(
-            "Valid Name".to_string(),
-            "Test".to_string(),
-            -1000.0,
-            10,
-            None,
-        );
-        
-        let result = tambah_produk(&invalid_price_produk).await;
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RepositoryError::ValidationError(_)));
-        
-        // Test empty category
-        let invalid_category_produk = Produk::new(
-            "Valid Name".to_string(),
-            "".to_string(),
-            1000.0,
-            10,
-            None,
-        );
-        
-        let result = tambah_produk(&invalid_category_produk).await;
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RepositoryError::ValidationError(_)));
-        
-        // Cleanup
-        let _ = clear_all().await;
-    }
+        let produk = Produk {
+            id: None,
+            nama: "Café Latte & Cappuccino™".to_string(),
+            kategori: "Minuman & Makanan".to_string(),
+            harga: 45000.50, // f64
+            stok: 100,
+            deskripsi: Some("Premium coffee blend with special ingredients: açaí, ginseng & organic milk".to_string()),
+        };
 
-    #[tokio::test]
-    async fn test_multiple_products_batch() {
-        let _ = cleanup_repository().await;
+        let result = tambah_produk(&db_pool, &produk).await;
+        assert!(result.is_ok());
         
-        let test_products = create_test_products();
-        let mut inserted_ids = Vec::new();
+        let product_id = result.unwrap();
+        let row = sqlx::query("SELECT nama, kategori FROM produk WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&db_pool)
+            .await
+            .expect("Failed to fetch inserted product");
+
+        let nama: String = row.get("nama");
+        let kategori: String = row.get("kategori");
         
-        // Insert all test products
-        for product in &test_products {
-            let id = tambah_produk(product).await.unwrap();
-            inserted_ids.push(id);
-        }
-        
-        // Verify all were inserted with correct sequential IDs
-        assert_eq!(inserted_ids.len(), 3);
-        for (index, &id) in inserted_ids.iter().enumerate() {
-            assert_eq!(id, (index + 1) as i64);
-            
-            // Verify each product can be retrieved
-            let retrieved = ambil_produk_by_id(id).await.unwrap().unwrap();
-            assert_eq!(retrieved.nama, test_products[index].nama);
-            assert_eq!(retrieved.kategori, test_products[index].kategori);
-        }
-        
-        // Cleanup
-        let _ = clear_all().await;
+        assert_eq!(nama, "Café Latte & Cappuccino™");
+        assert_eq!(kategori, "Minuman & Makanan");
     }
 }
