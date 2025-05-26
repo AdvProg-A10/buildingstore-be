@@ -501,5 +501,3 @@ mod tests {
         assert_ne!(PaymentMethod::BankTransfer, PaymentMethod::EWallet);
     }
 }
-
-

@@ -282,6 +282,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_all_suppliers_multiple() {
         let (repository, db_pool) = setup_repository().await;
+
         let supplier1 = Supplier {
             id: format!("SUP-{}", Uuid::new_v4()),
             name: "PT. Ayam".to_string(),
