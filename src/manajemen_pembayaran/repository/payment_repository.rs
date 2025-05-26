@@ -10,7 +10,8 @@ use crate::manajemen_pembayaran::model::payment::{Payment, PaymentMethod, Instal
 
 pub struct PembayaranRepository;
 
-impl PembayaranRepository {    pub async fn create(mut db: PoolConnection<Any>, payment: &Payment) -> Result<Payment, sqlx::Error>{        
+impl PembayaranRepository {    
+    pub async fn create(mut db: PoolConnection<Any>, payment: &Payment) -> Result<Payment, sqlx::Error>{        
         eprintln!("DEBUG: Creating payment with ID: {}, Transaction ID: {}", payment.id, payment.transaction_id);
         sqlx::query("
             INSERT INTO payments (id, transaction_id, amount, method, status, payment_date, due_date)
@@ -22,7 +23,8 @@ impl PembayaranRepository {    pub async fn create(mut db: PoolConnection<Any>, 
             .bind(payment.method.to_string())
             .bind(payment.status.to_string())
             .bind(payment.payment_date.to_rfc3339())
-            .bind(payment.due_date.map(|d| d.to_rfc3339()))            .execute(&mut *db)
+            .bind(payment.due_date.map(|d| d.to_rfc3339()))            
+            .execute(&mut *db)
             .await
             .map_err(|e| {
                 eprintln!("DEBUG: Failed to insert payment: {e}");
@@ -49,7 +51,9 @@ impl PembayaranRepository {    pub async fn create(mut db: PoolConnection<Any>, 
         }
 
         Ok(created_payment)
-    }    pub async fn find_by_id(mut db: PoolConnection<Any>, id: &str) -> Result<Payment, sqlx::Error>{
+    }    
+    
+    pub async fn find_by_id(mut db: PoolConnection<Any>, id: &str) -> Result<Payment, sqlx::Error>{
         let payment_with_installments = Self::load_payment_with_installments(&mut db, id).await?;
 
         Ok(payment_with_installments)
