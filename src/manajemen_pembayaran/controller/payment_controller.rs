@@ -43,27 +43,25 @@ pub async fn create_payment(payment_request: Json<CreatePaymentRequest>, db: &St
     let payment_service = PaymentService::new();
     
     let method: crate::manajemen_pembayaran::model::payment::PaymentMethod = match payment_service.parse_payment_method(&payment_request.method) {
-        Ok(m) => m,
-        Err(e) => {
+        Ok(m) => m,        Err(e) => {
             return (
                 Status::BadRequest,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Invalid payment method: {:?}", e),
+                    message: format!("Invalid payment method: {e:?}"),
                     data: None,
                 }),
             );
         }
     };
-    
-    let status = match payment_service.parse_payment_status(&payment_request.status) {
+      let status = match payment_service.parse_payment_status(&payment_request.status) {
         Ok(s) => s,
         Err(e) => {
             return (
                 Status::BadRequest,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Invalid payment status: {:?}", e),
+                    message: format!("Invalid payment status: {e:?}"),
                     data: None,
                 }),
             );
@@ -72,8 +70,7 @@ pub async fn create_payment(payment_request: Json<CreatePaymentRequest>, db: &St
     
     let due_date: Option<chrono::DateTime<Utc>> = match &payment_request.due_date {
         Some(date_str) => match chrono::DateTime::parse_from_rfc3339(date_str) {
-            Ok(dt) => Some(dt.with_timezone(&Utc)),
-            Err(_) => {
+            Ok(dt) => Some(dt.with_timezone(&Utc)),            Err(_) => {
                 return (
                     Status::BadRequest,
                     Json(ApiResponse {
@@ -106,12 +103,11 @@ pub async fn create_payment(payment_request: Json<CreatePaymentRequest>, db: &St
                 message: "Payment created successfully".to_string(),
                 data: Some(created_payment),
             }),
-        ),
-        Err(e) => (
+        ),        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to create payment: {:?}", e),
+                message: format!("Failed to create payment: {e:?}"),
                 data: None,
             }),
         ),
@@ -139,12 +135,11 @@ pub async fn get_payment_by_id(id: String, db: &State<Pool<Any>>) -> (Status, Js
                 message: msg,
                 data: None,
             }),
-        ),
-        Err(e) => (
+        ),        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to retrieve payment: {:?}", e),
+                message: format!("Failed to retrieve payment: {e:?}"),
                 data: None,
             }),
         ),
@@ -182,12 +177,11 @@ pub async fn get_all_payments(
                 message: format!("Successfully retrieved {} payments", payments.len()),
                 data: Some(payments),
             }),
-        ),
-        Err(e) => (
+        ),        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to retrieve payments: {:?}", e),
+                message: format!("Failed to retrieve payments: {e:?}"),
                 data: None,
             }),
         ),
@@ -203,15 +197,14 @@ pub async fn update_payment_status(
     db: &State<Pool<Any>>
 ) -> (Status, Json<ApiResponse<Payment>>) {
     let payment_service = PaymentService::new();
-    
-    let new_status = match payment_service.parse_payment_status(&status_request.new_status) {
+      let new_status = match payment_service.parse_payment_status(&status_request.new_status) {
         Ok(s) => s,
         Err(e) => {
             return (
                 Status::BadRequest,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Invalid payment status: {:?}", e),
+                    message: format!("Invalid payment status: {e:?}"),
                     data: None,
                 }),
             );
@@ -234,12 +227,11 @@ pub async fn update_payment_status(
                 message: msg,
                 data: None,
             }),
-        ),
-        Err(e) => (
+        ),        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to update payment status: {:?}", e),
+                message: format!("Failed to update payment status: {e:?}"),
                 data: None,
             }),
         ),
@@ -280,12 +272,11 @@ pub async fn add_installment(
                 message: msg,
                 data: None,
             }),
-        ),
-        Err(e) => (
+        ),        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to add installment: {:?}", e),
+                message: format!("Failed to add installment: {e:?}"),
                 data: None,
             }),
         ),
@@ -306,12 +297,11 @@ pub async fn delete_payment(id: String, db: &State<Pool<Any>>) -> (Status, Json<
                 message: "Payment deleted successfully".to_string(),
                 data: None,
             }),
-        ),
-        Err(e) => (
+        ),        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to delete payment: {:?}", e),
+                message: format!("Failed to delete payment: {e:?}"),
                 data: None,
             }),
         ),

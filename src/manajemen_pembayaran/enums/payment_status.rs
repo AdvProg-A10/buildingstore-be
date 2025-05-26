@@ -22,7 +22,7 @@ impl std::fmt::Display for PaymentStatus {
             PaymentStatus::Paid => "LUNAS",
             PaymentStatus::Installment => "CICILAN",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
