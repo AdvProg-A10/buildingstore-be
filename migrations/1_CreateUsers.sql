@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR NOT NULL UNIQUE,
+    password VARCHAR NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0
+);

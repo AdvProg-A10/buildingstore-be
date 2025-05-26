@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS produk (
+    id BIGSERIAL PRIMARY KEY,
+    nama VARCHAR NOT NULL,
+    kategori VARCHAR NOT NULL,
+    harga DECIMAL(15,2) NOT NULL,
+    stok INTEGER NOT NULL,
+    deskripsi TEXT
+);
