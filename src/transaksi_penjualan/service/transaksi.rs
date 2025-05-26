@@ -394,26 +394,18 @@ impl TransaksiService {
 mod tests {
     use super::*;
     use sqlx::any::install_default_drivers;
-    use sqlx::any::AnyPoolOptions;
     use rocket::async_test;
 
     async fn setup() -> Pool<Any> {
         install_default_drivers();
         
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_name = format!("sqlite::memory:service_test_{}", timestamp);
-        
-        let db = AnyPoolOptions::new()
+        let db = sqlx::any::AnyPoolOptions::new()
             .max_connections(1)
-            .connect(&db_name)
+            .connect("sqlite::memory:")
             .await
             .unwrap();
         
-        sqlx::migrate!("./migrations/test")
+        sqlx::migrate!("migrations/test")
             .run(&db)
             .await
             .unwrap();

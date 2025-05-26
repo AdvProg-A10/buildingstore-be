@@ -5,7 +5,6 @@ use rocket::serde::json::Json;
 use sqlx::{Any, Pool};
 use autometrics::autometrics;
 
-use crate::auth::guards::auth::AuthenticatedUser;
 use crate::transaksi_penjualan::model::transaksi::Transaksi;
 use crate::transaksi_penjualan::model::detail_transaksi::DetailTransaksi;
 use crate::transaksi_penjualan::service::transaksi::TransaksiService;
@@ -49,7 +48,6 @@ impl ErrorResponse {
 #[autometrics]
 #[get("/transaksi?<sort>&<filter>&<keyword>&<status>&<id_pelanggan>&<page>&<limit>")]
 pub async fn get_all_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     sort: Option<String>, 
     filter: Option<String>, 
@@ -81,7 +79,6 @@ pub async fn get_all_transaksi(
 #[autometrics]
 #[post("/transaksi", data = "<request>")]
 pub async fn create_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     request: Json<crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest>
 ) -> Result<Json<ApiResponse<Transaksi>>, (Status, Json<ErrorResponse>)> {
@@ -115,7 +112,6 @@ pub async fn create_transaksi(
 #[autometrics]
 #[get("/transaksi/<id>")]
 pub async fn get_transaksi_by_id(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32 
 ) -> Result<Json<ApiResponse<Transaksi>>, (Status, Json<ErrorResponse>)> {
@@ -131,7 +127,6 @@ pub async fn get_transaksi_by_id(
 #[autometrics]
 #[patch("/transaksi/<id>", data = "<transaksi>")]
 pub async fn update_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32,
     transaksi: Json<Transaksi>
@@ -179,7 +174,6 @@ pub async fn update_transaksi(
 #[autometrics]
 #[delete("/transaksi/<id>")]
 pub async fn delete_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> Result<Json<ApiResponse<String>>, (Status, Json<ErrorResponse>)> {
@@ -219,7 +213,6 @@ pub async fn delete_transaksi(
 #[autometrics]
 #[put("/transaksi/<id>/complete")]
 pub async fn complete_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> Result<Json<ApiResponse<Transaksi>>, (Status, Json<ErrorResponse>)> {
@@ -239,7 +232,6 @@ pub async fn complete_transaksi(
 #[autometrics]
 #[put("/transaksi/<id>/cancel")]
 pub async fn cancel_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> Result<Json<ApiResponse<Transaksi>>, (Status, Json<ErrorResponse>)> {
@@ -259,7 +251,6 @@ pub async fn cancel_transaksi(
 #[autometrics]
 #[get("/transaksi/<id_transaksi>/detail")]
 pub async fn get_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32
 ) -> Result<Json<ApiResponse<Vec<DetailTransaksi>>>, (Status, Json<ErrorResponse>)> {
@@ -275,7 +266,6 @@ pub async fn get_detail_transaksi(
 #[autometrics]
 #[post("/transaksi/<id_transaksi>/detail", data = "<detail>")]
 pub async fn add_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32,
     detail: Json<DetailTransaksi>
@@ -323,7 +313,6 @@ pub async fn add_detail_transaksi(
 #[autometrics]
 #[patch("/transaksi/<id_transaksi>/detail/<id_detail>", data = "<detail>")]
 pub async fn update_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32,
     id_detail: i32,
@@ -372,7 +361,6 @@ pub async fn update_detail_transaksi(
 #[autometrics]
 #[delete("/transaksi/<id_transaksi>/detail/<id_detail>")]
 pub async fn delete_detail_transaksi(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id_transaksi: i32,
     id_detail: i32
@@ -413,7 +401,6 @@ pub async fn delete_detail_transaksi(
 #[autometrics]
 #[get("/transaksi/<id>/full")]
 pub async fn get_transaksi_with_details(
-    _user: AuthenticatedUser,
     db: &State<Pool<Any>>, 
     id: i32
 ) -> Result<Json<ApiResponse<crate::transaksi_penjualan::dto::transaksi_request::TransaksiWithDetailsResponse>>, (Status, Json<ErrorResponse>)> {
@@ -470,43 +457,64 @@ mod tests {
     use rocket::local::asynchronous::Client;
     use rocket::{routes, uri, Rocket, async_test};
     use sqlx::any::install_default_drivers;
+    use crate::auth::model::user::User;
+    use crate::auth::service::auth::AuthService;
+    use crate::auth::controller::auth::*;
     use crate::transaksi_penjualan::model::transaksi::Transaksi;
 
-    async fn setup() -> Rocket<rocket::Build> {
+    const ADMIN_USERNAME: &str = "admin";
+    const ADMIN_PASSWORD: &str = "admin123";
+
+    async fn setup() -> Client {
         install_default_drivers();
-        
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_name = format!("sqlite::memory:controller_test_{}", timestamp);
         
         let db = sqlx::any::AnyPoolOptions::new()
             .max_connections(1)
-            .connect(&db_name)
+            .connect("sqlite::memory:")
             .await
             .unwrap();
         
-        sqlx::migrate!("./migrations/test")
+        sqlx::migrate!("migrations/test")
             .run(&db)
             .await
             .unwrap();
 
-        rocket::build()
+        // Create an admin user for testing
+        AuthService::register_user(
+            db.clone(),
+            User::new(ADMIN_USERNAME.to_string(), 
+                ADMIN_PASSWORD.to_string(), 
+                true)
+            ).await.unwrap();
+
+        let production = false;
+        let rocket = rocket::build()
             .manage(db.clone())
+            .manage(production)
             .mount("/", routes![
                 get_all_transaksi, create_transaksi, get_transaksi_by_id, 
                 update_transaksi, delete_transaksi, complete_transaksi, cancel_transaksi,
                 get_detail_transaksi, add_detail_transaksi, update_detail_transaksi, delete_detail_transaksi,
-                get_transaksi_with_details, validate_product_stock
-            ])
+                get_transaksi_with_details, validate_product_stock, login
+            ]);
+        
+        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+
+        // Authenticate as admin
+        client.post(uri!(login))
+            .json(&AuthForm {
+                username: ADMIN_USERNAME.to_string(),
+                password: ADMIN_PASSWORD.to_string(),
+            })
+            .dispatch()
+            .await;
+
+        client
     }
 
     #[async_test]
     async fn test_create_transaksi_with_validation() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
             id_pelanggan: 1,
@@ -539,8 +547,7 @@ mod tests {
 
     #[async_test]
     async fn test_get_all_transaksi() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let response = client.get("/transaksi").dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -551,8 +558,7 @@ mod tests {
 
     #[async_test]
     async fn test_validate_product_stock() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let products = vec![
             crate::transaksi_penjualan::dto::transaksi_request::CreateDetailTransaksiRequest {
@@ -573,8 +579,7 @@ mod tests {
 
     #[async_test]
     async fn test_get_transaksi_with_details() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
             id_pelanggan: 1,
@@ -614,8 +619,7 @@ mod tests {
 
     #[async_test]
     async fn test_transaksi_state_transitions() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
             id_pelanggan: 1,
@@ -660,8 +664,7 @@ mod tests {
 
     #[async_test]
     async fn test_detail_transaksi_crud() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let new_transaksi_request = crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest {
             id_pelanggan: 1,
@@ -711,8 +714,7 @@ mod tests {
 
     #[async_test]
     async fn test_error_handling() {
-        let rocket = setup().await;
-        let client = Client::tracked(rocket).await.expect("Must provide a valid Rocket instance");
+        let client = setup().await;
 
         let response = client.get("/transaksi/99999").dispatch().await;
         assert_eq!(response.status(), Status::NotFound);
