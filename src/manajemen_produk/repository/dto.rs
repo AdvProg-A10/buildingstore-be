@@ -1,11 +1,8 @@
-use sqlx::{PgPool, Row};
-use std::sync::OnceLock;
+use sqlx::{AnyPool, Row};
 use std::error::Error as StdError;
 use std::fmt;
 use crate::manajemen_produk::model::Produk;
-
-// Global database connection pool
-static DB_POOL: OnceLock<PgPool> = OnceLock::new();
+use rocket::State;
 
 // Error types
 #[derive(Debug)]
@@ -35,60 +32,9 @@ impl From<sqlx::Error> for RepositoryError {
     }
 }
 
-// Database initialization
-pub async fn init_database() -> Result<(), RepositoryError> {
-    // Use PostgreSQL connection string - adjust as needed for your setup
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://localhost/test_db".to_string());
-    
-    let pool = PgPool::connect(&database_url).await?;
-    
-    // Create products table with PostgreSQL syntax
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS produk (
-            id BIGSERIAL PRIMARY KEY,
-            nama VARCHAR NOT NULL,
-            kategori VARCHAR NOT NULL,
-            harga DECIMAL(15,2) NOT NULL,
-            stok INTEGER NOT NULL,
-            deskripsi TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        "#
-    )
-    .execute(&pool)
-    .await?;
-
-    // Create trigger for updated_at (PostgreSQL syntax)
-    sqlx::query(
-        r#"
-        CREATE OR REPLACE FUNCTION update_updated_at_column()
-        RETURNS TRIGGER AS $$
-        BEGIN
-            NEW.updated_at = CURRENT_TIMESTAMP;
-            RETURN NEW;
-        END;
-        $$ language 'plpgsql';
-        
-        DROP TRIGGER IF EXISTS update_produk_updated_at ON produk;
-        CREATE TRIGGER update_produk_updated_at
-            BEFORE UPDATE ON produk
-            FOR EACH ROW
-            EXECUTE FUNCTION update_updated_at_column();
-        "#
-    )
-    .execute(&pool)
-    .await?;
-
-    DB_POOL.set(pool).map_err(|_| RepositoryError::Other("Failed to set database pool".to_string()))?;
-    Ok(())
-}
-
-// Get database pool
-pub fn get_db_pool() -> Result<&'static PgPool, RepositoryError> {
-    DB_POOL.get().ok_or(RepositoryError::Other("Database not initialized".to_string()))
+// Helper function untuk mendapatkan pool dari Rocket State
+pub fn get_db_pool_from_state(db: &State<AnyPool>) -> &AnyPool {
+    db.inner()
 }
 
 // Validation helpers
@@ -109,11 +55,20 @@ pub fn validate_produk(produk: &Produk) -> Result<(), RepositoryError> {
         return Err(RepositoryError::ValidationError("Stok tidak boleh negatif".to_string()));
     }
     
+    // Validasi panjang string sesuai database constraints
+    if produk.nama.len() > 255 {
+        return Err(RepositoryError::ValidationError("Nama produk terlalu panjang (maksimal 255 karakter)".to_string()));
+    }
+    
+    if produk.kategori.len() > 100 {
+        return Err(RepositoryError::ValidationError("Kategori terlalu panjang (maksimal 100 karakter)".to_string()));
+    }
+    
     Ok(())
 }
 
-// Convert database row to Produk
-pub fn row_to_produk(row: &sqlx::postgres::PgRow) -> Result<Produk, sqlx::Error> {
+// Convert database row to Produk - support untuk AnyRow
+pub fn row_to_produk(row: &sqlx::any::AnyRow) -> Result<Produk, sqlx::Error> {
     Ok(Produk::with_id(
         row.try_get("id")?,
         row.try_get("nama")?,
@@ -125,9 +80,7 @@ pub fn row_to_produk(row: &sqlx::postgres::PgRow) -> Result<Produk, sqlx::Error>
 }
 
 // Statistics helper
-pub async fn get_store_stats() -> Result<(i64, i64), RepositoryError> {
-    let pool = get_db_pool()?;
-    
+pub async fn get_store_stats(pool: &AnyPool) -> Result<(i64, i64), RepositoryError> {
     let row = sqlx::query("SELECT COUNT(*) as count, COALESCE(MAX(id), 0) as max_id FROM produk")
         .fetch_one(pool)
         .await?;
