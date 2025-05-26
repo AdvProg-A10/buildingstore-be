@@ -527,7 +527,6 @@ mod tests {
         let details = TransaksiService::get_detail_by_transaksi_id(db.clone(), created_transaksi.id).await.unwrap();
         assert_eq!(details.len(), 1);
 
-        // Update detail
         let mut updated_detail = created_detail.clone();
         updated_detail.update_jumlah(3);
         let result = TransaksiService::update_detail_transaksi(db.clone(), &updated_detail).await.unwrap();
