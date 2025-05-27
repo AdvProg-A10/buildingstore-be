@@ -72,7 +72,7 @@ impl TransaksiService {
         let created_transaksi = TransaksiRepository::create_transaksi(db_connection, &transaksi).await?;
 
         for detail_request in &request.detail_transaksi {
-            let harga_satuan = product_prices.get(&detail_request.id_produk).unwrap_or(&0.0);
+            let harga_satuan = product_prices.get(&detail_request.id_produk).unwrap_or(&detail_request.harga_satuan);
             let detail = detail_request.to_detail_transaksi(created_transaksi.id, *harga_satuan);
             
             let db_connection = db.acquire().await?;

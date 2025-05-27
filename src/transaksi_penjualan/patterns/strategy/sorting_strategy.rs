@@ -163,3 +163,121 @@ impl FilteringStrategyFactory {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transaksi_penjualan::enums::status_transaksi::StatusTransaksi;
+
+    fn create_test_data() -> Vec<Transaksi> {
+        vec![
+            Transaksi {
+                id: 1,
+                id_pelanggan: 1,
+                nama_pelanggan: "Charlie".to_string(),
+                tanggal_transaksi: "2024-01-15 10:00:00".to_string(),
+                total_harga: 150000.0,
+                status: StatusTransaksi::MasihDiproses,
+                catatan: Some("Test 1".to_string()),
+            },
+            Transaksi {
+                id: 2,
+                id_pelanggan: 2,
+                nama_pelanggan: "Alice".to_string(),
+                tanggal_transaksi: "2024-01-10 14:30:00".to_string(),
+                total_harga: 250000.0,
+                status: StatusTransaksi::Selesai,
+                catatan: Some("Test 2".to_string()),
+            },
+            Transaksi {
+                id: 3,
+                id_pelanggan: 3,
+                nama_pelanggan: "Bob".to_string(),
+                tanggal_transaksi: "2024-01-20 09:15:00".to_string(),
+                total_harga: 100000.0,
+                status: StatusTransaksi::Dibatalkan,
+                catatan: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_sorting_strategies() {
+        let data = create_test_data();
+
+        let sort_date = SortByDate;
+        let sorted = sort_date.sort(data.clone());
+        assert_eq!(sorted[0].tanggal_transaksi, "2024-01-10 14:30:00");
+        assert_eq!(sorted[2].tanggal_transaksi, "2024-01-20 09:15:00");
+
+        let sort_total_desc = SortByTotalDesc;
+        let sorted = sort_total_desc.sort(data.clone());
+        assert_eq!(sorted[0].total_harga, 250000.0);
+        assert_eq!(sorted[2].total_harga, 100000.0);
+
+        let sort_customer = SortByCustomer;
+        let sorted = sort_customer.sort(data);
+        assert_eq!(sorted[0].nama_pelanggan, "Alice");
+        assert_eq!(sorted[1].nama_pelanggan, "Bob");
+        assert_eq!(sorted[2].nama_pelanggan, "Charlie");
+    }
+
+    #[test]
+    fn test_filtering_strategies() {
+        let data = create_test_data();
+
+        let filter_customer = FilterByCustomer;
+        let filtered = filter_customer.filter(data.clone(), "Alice");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].nama_pelanggan, "Alice");
+
+        let filter_status = FilterByStatus;
+        let filtered = filter_status.filter(data.clone(), "SELESAI");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].status, StatusTransaksi::Selesai);
+
+        let filter_all = FilterByAll;
+        let filtered = filter_all.filter(data, "Test");
+        assert_eq!(filtered.len(), 2); // Should find "Test 1" and "Test 2"
+    }
+
+    #[test]
+    fn test_strategy_factories() {
+        let data = create_test_data();
+
+        let sort_strategy = SortingStrategyFactory::create("total_desc");
+        let sorted = sort_strategy.sort(data.clone());
+        assert_eq!(sorted[0].total_harga, 250000.0);
+
+        let filter_strategy = FilteringStrategyFactory::create("customer");
+        let filtered = filter_strategy.filter(data, "Alice");
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_strategy_combination() {
+        let data = create_test_data();
+
+        let filter_strategy = FilteringStrategyFactory::create("status");
+        let filtered = filter_strategy.filter(data, "MASIH_DIPROSES");
+
+        let sort_strategy = SortingStrategyFactory::create("total_asc");
+        let result = sort_strategy.sort(filtered);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].status, StatusTransaksi::MasihDiproses);
+    }
+
+    #[test]
+    fn test_empty_data_handling() {
+        let empty_data: Vec<Transaksi> = vec![];
+
+        let sort_strategy = SortByTotal;
+        let sorted = sort_strategy.sort(empty_data.clone());
+        assert_eq!(sorted.len(), 0);
+
+        let filter_strategy = FilterByCustomer;
+        let filtered = filter_strategy.filter(empty_data, "anything");
+        assert_eq!(filtered.len(), 0);
+    }
+}
