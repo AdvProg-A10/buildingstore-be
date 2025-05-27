@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use async_trait::async_trait;
 use sqlx::{Any, Pool};
+use log::{error, info};
 
 use crate::manajemen_supplier::model::supplier::Supplier;
 use crate::manajemen_supplier::patterns::factory::SupplierTransactionFactory;
@@ -27,15 +28,15 @@ impl SupplierObserver for SupplierTransactionLogger {
         let transaction_to_save = SupplierTransactionFactory::create_from_supplier(supplier);
         
         match self.db_pool.acquire().await {
-            Ok(conn) => {
-                if let Err(err) = self.trx_repo.save(transaction_to_save, conn).await {
-                    eprintln!("[ERROR] Failed to log supplier transaction for supplier ID {}: {}", supplier.id, err);
+            Ok(conn) => { 
+                if let Err(err) = self.trx_repo.save(transaction_to_save, conn).await { 
+                    error!("[ERROR] Failed to log supplier transaction for supplier ID {}: {}", supplier.id, err);
                 } else {
-                    println!("[INFO] Successfully logged transaction for supplier ID {}", supplier.id);
+                    info!("[INFO] Successfully logged transaction for supplier ID {}", supplier.id);
                 }
             }
             Err(err) => {
-                eprintln!("[ERROR] Failed to acquire DB connection for logging transaction for supplier ID {}: {}", supplier.id, err);
+                error!("[ERROR] Failed to acquire DB connection for logging transaction for supplier ID {}: {}", supplier.id, err);
             }
         }
     }
@@ -48,18 +49,19 @@ mod tests {
     use mockall::predicate::*;
     use sqlx::any::AnyPoolOptions;
     use std::sync::Arc;
+    use uuid::Uuid;
 
     use crate::manajemen_supplier::model::supplier::Supplier;
     use crate::manajemen_supplier::model::supplier_transaction::SupplierTransaction;
     use crate::manajemen_supplier::repository::supplier_transaction_repository::{
-        MockSupplierTransactionRepository,
+        MockSupplierTransactionRepository, 
     };
 
     async fn create_dummy_pool_for_logger_tests() -> Pool<Any> {
         sqlx::any::install_default_drivers();
         AnyPoolOptions::new()
             .max_connections(1)
-            .connect("sqlite::memory:")
+            .connect(&format!("sqlite:file:memdb_logger_test_{}?mode=memory&cache=shared", Uuid::new_v4()))
             .await
             .expect("Failed to create dummy pool for logger tests")
     }
@@ -90,14 +92,14 @@ mod tests {
                 trx.supplier_name == expected_supplier_name_in_trx
             })
             .times(1)
-            .returning(|_trx, _conn| {
+            .returning(|trx_input, _conn| { 
                 Ok(SupplierTransaction { 
                     id: "mocked-trx-id-123".to_string(), 
-                    supplier_id: "SUP-LOG-TEST-001".to_string(),
-                    supplier_name: "Logging Test Inc.".to_string(), 
-                    jenis_barang: "Data".to_string(),
-                    jumlah_barang: 42,
-                    pengiriman_info: "LOGRESI001".to_string(),
+                    supplier_id: trx_input.supplier_id.clone(), 
+                    supplier_name: trx_input.supplier_name.clone(), 
+                    jenis_barang: trx_input.jenis_barang.clone(),
+                    jumlah_barang: trx_input.jumlah_barang,
+                    pengiriman_info: trx_input.pengiriman_info.clone(), 
                     tanggal_transaksi: Utc::now().to_rfc3339()
                 })
             });
@@ -113,12 +115,11 @@ mod tests {
         let supplier_arg = sample_supplier_for_logger_tests();
 
         mock_trx_repo.expect_save()
-            .with(always(), always())
+            .with(always(), mockall::predicate::always()) 
             .times(1)
             .returning(|_trx, _conn| Err(sqlx::Error::Protocol("Simulated DB save error".to_string())));
 
         let logger = SupplierTransactionLogger::new(Arc::new(mock_trx_repo), dummy_pool);
         logger.on_supplier_saved(&supplier_arg).await;
     }
-
 }

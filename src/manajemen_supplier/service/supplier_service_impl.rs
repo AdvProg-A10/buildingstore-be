@@ -98,16 +98,14 @@ impl SupplierService for SupplierServiceImpl {
         let conn = match db_pool.acquire().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Service Error] Failed to acquire DB connection for get_supplier (ID: {}): {}", id, e);
-                return Err(format!("Service: Failed to acquire DB connection: {}", e));
+                return Err(format!("Service: Failed to acquire DB connection: {e}"));
             }
         };
         match self.supplier_repo.find_by_id(id, conn).await {
             Ok(s) => Ok(Some(s)),
             Err(SqlxError::RowNotFound) => Ok(None),
             Err(e) => {
-                eprintln!("[Service Error] Repository error fetching supplier by ID '{}': {}", id, e);
-                Err(format!("Service: Repository error: {}", e))
+                return Err(format!("Service: Repository error: {e}"));
             }
         }
     }
@@ -116,16 +114,14 @@ impl SupplierService for SupplierServiceImpl {
         let conn = match db_pool.acquire().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Service Error] Failed to acquire DB connection for get all supplier");
-                return Err(format!("Service: Failed to acquire DB connection: {}", e));
+                return Err(format!("Service: Failed to acquire DB connection: {e}"));
             }
         };
 
         match self.supplier_repo.find_all(conn).await {
             Ok(s) => Ok(s),
             Err(e) => {
-                eprintln!("[Service Error] Repository error fetching all suppliers: {}", e);
-                Err(format!("Service: Repository error: {}", e))
+                return Err(format!("Service: Repository error: {e}"));
             }
         }
     }
@@ -134,16 +130,14 @@ impl SupplierService for SupplierServiceImpl {
         let conn = match db_pool.acquire().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Service Error] Failed to acquire DB connection for get all supplier transaction");
-                return Err(format!("Service: Failed to acquire DB connection: {}", e));
+                return Err(format!("Service: Failed to acquire DB connection: {e}"));
             }
         };
 
         match self.transaction_repo.find_all(conn).await {
             Ok(s) => Ok(s),
             Err(e) => {
-                eprintln!("[Service Error] Repository error fetching all suppliers: {}", e);
-                Err(format!("Service: Repository error: {}", e))
+                return Err(format!("Service: Repository error: {e}"))
             }
         }
     }
@@ -391,5 +385,144 @@ mod tests {
         let result = service.delete_supplier(pool, "non-existent").await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Service: Supplier not found for delete.");
+    }
+
+     #[tokio::test]
+    async fn test_get_supplier_acquire_connection_fails() {
+        let mock_repo = MockSupplierRepository::new();
+        let mock_notifier = MockSupplierNotifier::new();
+        let mock_transaction_repo = MockSupplierTransactionRepository::new();
+
+        let service = SupplierServiceImpl::new(
+            Arc::new(mock_repo),
+            Arc::new(mock_transaction_repo),
+            Arc::new(mock_notifier),
+        );
+
+        sqlx::any::install_default_drivers();
+        let pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create dummy pool for close test");
+        pool.close().await;
+
+        let result = service.get_supplier(pool, "any_id").await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Failed to acquire DB connection:"));
+        assert!(err_msg.contains("closed pool"));
+    }
+
+    #[tokio::test]
+    async fn test_get_supplier_repository_generic_error() {
+        let mut mock_repo = MockSupplierRepository::new();
+        let mock_notifier = MockSupplierNotifier::new();
+        let mock_transaction_repo = MockSupplierTransactionRepository::new();
+        let supplier_id = "sup-repo-err";
+
+        mock_repo.expect_find_by_id()
+            .with(eq(supplier_id), always())
+            .times(1)
+            .returning(|_, _| Box::pin(async { Err(SqlxError::PoolTimedOut) }));
+
+        let service = SupplierServiceImpl::new(Arc::new(mock_repo), Arc::new(mock_transaction_repo), Arc::new(mock_notifier));
+        let pool = create_dummy_pool().await;
+
+        let result = service.get_supplier(pool, supplier_id).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Repository error:"));
+        assert!(err_msg.contains("pool timed out")); 
+    }
+
+    #[tokio::test]
+    async fn test_get_all_suppliers_acquire_connection_fails() {
+        let mock_repo = MockSupplierRepository::new();
+        let mock_notifier = MockSupplierNotifier::new();
+        let mock_transaction_repo = MockSupplierTransactionRepository::new();
+
+        let service = SupplierServiceImpl::new(
+            Arc::new(mock_repo),
+            Arc::new(mock_transaction_repo),
+            Arc::new(mock_notifier),
+        );
+        sqlx::any::install_default_drivers();
+        let pool = AnyPoolOptions::new().max_connections(1).connect("sqlite::memory:").await.expect("Pool creation failed");
+        pool.close().await;
+
+        let result = service.get_all_suppliers(pool).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Failed to acquire DB connection:"));
+        assert!(err_msg.contains("closed pool"));
+    }
+
+    #[tokio::test]
+    async fn test_get_all_suppliers_repository_generic_error() {
+        let mut mock_repo = MockSupplierRepository::new();
+        let mock_notifier = MockSupplierNotifier::new();
+        let mock_transaction_repo = MockSupplierTransactionRepository::new();
+
+        mock_repo.expect_find_all()
+            .times(1)
+            .returning(|_conn| Box::pin(async { Err(SqlxError::PoolTimedOut) }));
+
+        let service = SupplierServiceImpl::new(Arc::new(mock_repo), Arc::new(mock_transaction_repo), Arc::new(mock_notifier));
+        let pool = create_dummy_pool().await;
+
+        let result = service.get_all_suppliers(pool).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Repository error:"));
+        assert!(err_msg.contains("pool timed out"));
+    }
+
+    #[tokio::test]
+    async fn test_get_all_supplier_transactions_acquire_connection_fails() {
+        let mock_repo = MockSupplierRepository::new();
+        let mock_notifier = MockSupplierNotifier::new();
+        let mock_transaction_repo = MockSupplierTransactionRepository::new();
+
+        let service = SupplierServiceImpl::new(
+            Arc::new(mock_repo),
+            Arc::new(mock_transaction_repo),
+            Arc::new(mock_notifier),
+        );
+        sqlx::any::install_default_drivers();
+        let pool = AnyPoolOptions::new().max_connections(1).connect("sqlite::memory:").await.expect("Pool creation failed");
+        pool.close().await;
+
+        let result = service.get_all_supplier_transactions(pool).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Failed to acquire DB connection:"));
+        assert!(err_msg.contains("closed pool"));
+    }
+
+    #[tokio::test]
+    async fn test_get_all_supplier_transactions_repository_generic_error() {
+        let mock_supplier_repo_concrete = MockSupplierRepository::new();
+        let mock_notifier_concrete = MockSupplierNotifier::new();
+        let mut mock_transaction_repo_concrete = MockSupplierTransactionRepository::new();
+
+        mock_transaction_repo_concrete.expect_find_all()
+            .times(1)
+            .returning(|_conn: PoolConnection<Any>| {
+                Err(SqlxError::PoolTimedOut)
+            });
+
+        let service = SupplierServiceImpl::new(
+            Arc::new(mock_supplier_repo_concrete),
+            Arc::new(mock_transaction_repo_concrete),
+            Arc::new(mock_notifier_concrete)
+        );
+        let pool = create_dummy_pool().await;
+        let result = service.get_all_supplier_transactions(pool).await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Repository error:"));
+        assert!(err_msg.contains("timed out while waiting for a connection from the pool") || err_msg.contains("Repository error: pool timed out"), "Error message was: {}", err_msg);
     }
 }
