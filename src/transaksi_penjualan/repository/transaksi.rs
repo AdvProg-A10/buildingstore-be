@@ -1,7 +1,7 @@
 use sqlx::any::AnyRow;
 use sqlx::{Any, pool::PoolConnection};
 use sqlx::Row;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use crate::transaksi_penjualan::model::transaksi::Transaksi;
 use crate::transaksi_penjualan::model::detail_transaksi::DetailTransaksi;
@@ -11,6 +11,8 @@ pub struct TransaksiRepository;
 
 impl TransaksiRepository {
     pub async fn create_transaksi(mut db: PoolConnection<Any>, transaksi: &Transaksi) -> Result<Transaksi, sqlx::Error> {
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        
         let result = sqlx::query("
                 INSERT INTO transaksi (id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -21,13 +23,13 @@ impl TransaksiRepository {
             .bind(&transaksi.tanggal_transaksi)
             .bind(transaksi.total_harga)
             .bind(transaksi.status.to_string())
-            .bind(transaksi.catatan.as_ref().map(|s| s.as_str()).unwrap_or(""))
-            .bind(DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap().to_string())
-            .bind(DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap().to_string())
+            .bind(transaksi.catatan.as_deref().unwrap_or(""))
+            .bind(&now)
+            .bind(&now)
             .fetch_one(&mut *db)
             .await?;
         
-        let transaksi = Self::parse_row_to_transaksi(result);
+        let transaksi = Self::parse_row_to_transaksi(result)?;
         Ok(transaksi)
     }
 
@@ -41,11 +43,13 @@ impl TransaksiRepository {
             .fetch_one(&mut *db)
             .await?;
         
-        let transaksi = Self::parse_row_to_transaksi(result);
+        let transaksi = Self::parse_row_to_transaksi(result)?;
         Ok(transaksi)
     }
 
     pub async fn update_transaksi(mut db: PoolConnection<Any>, transaksi: &Transaksi) -> Result<Transaksi, sqlx::Error> {
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        
         let result = sqlx::query("
                 UPDATE transaksi
                 SET id_pelanggan = $1, nama_pelanggan = $2, tanggal_transaksi = $3, 
@@ -58,13 +62,13 @@ impl TransaksiRepository {
             .bind(&transaksi.tanggal_transaksi)
             .bind(transaksi.total_harga)
             .bind(transaksi.status.to_string())
-            .bind(transaksi.catatan.as_ref().map(|s| s.as_str()).unwrap_or(""))
-            .bind(DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap().to_string())
+            .bind(transaksi.catatan.as_deref().unwrap_or(""))
+            .bind(&now)
             .bind(transaksi.id)
             .fetch_one(&mut *db)
             .await?;
         
-        let transaksi = Self::parse_row_to_transaksi(result);
+        let transaksi = Self::parse_row_to_transaksi(result)?;
         Ok(transaksi)
     }
 
@@ -77,19 +81,26 @@ impl TransaksiRepository {
         Ok(())
     }
 
-    pub async fn get_all_transaksi(mut db: PoolConnection<Any>) -> Result<Vec<Transaksi>, sqlx::Error> {
+    pub async fn get_all_transaksi(mut db: PoolConnection<Any>) -> Result<Vec<Transaksi>, sqlx::Error> {        
         let rows = sqlx::query("
-                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan
+                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
+                       total_harga, status, catatan
                 FROM transaksi
                 ORDER BY tanggal_transaksi DESC
             ")
             .fetch_all(&mut *db)
             .await?;
-        
+                
         let mut transaksi_list = Vec::new();
-        for row in rows {
-            let transaksi = Self::parse_row_to_transaksi(row);
-            transaksi_list.push(transaksi);
+        for (_i, row) in rows.into_iter().enumerate() {
+            match Self::parse_row_to_transaksi(row) {
+                Ok(transaksi) => {
+                    transaksi_list.push(transaksi);
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
         }
         
         Ok(transaksi_list)
@@ -97,7 +108,8 @@ impl TransaksiRepository {
 
     pub async fn get_transaksi_by_pelanggan(mut db: PoolConnection<Any>, id_pelanggan: i32) -> Result<Vec<Transaksi>, sqlx::Error> {
         let rows = sqlx::query("
-                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan
+                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
+                       total_harga, status, catatan
                 FROM transaksi
                 WHERE id_pelanggan = $1
                 ORDER BY tanggal_transaksi DESC
@@ -108,7 +120,7 @@ impl TransaksiRepository {
         
         let mut transaksi_list = Vec::new();
         for row in rows {
-            let transaksi = Self::parse_row_to_transaksi(row);
+            let transaksi = Self::parse_row_to_transaksi(row)?;
             transaksi_list.push(transaksi);
         }
         
@@ -117,7 +129,8 @@ impl TransaksiRepository {
 
     pub async fn get_transaksi_by_status(mut db: PoolConnection<Any>, status: &StatusTransaksi) -> Result<Vec<Transaksi>, sqlx::Error> {
         let rows = sqlx::query("
-                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, total_harga, status, catatan
+                SELECT id, id_pelanggan, nama_pelanggan, tanggal_transaksi, 
+                       total_harga, status, catatan
                 FROM transaksi
                 WHERE status = $1
                 ORDER BY tanggal_transaksi DESC
@@ -128,7 +141,7 @@ impl TransaksiRepository {
         
         let mut transaksi_list = Vec::new();
         for row in rows {
-            let transaksi = Self::parse_row_to_transaksi(row);
+            let transaksi = Self::parse_row_to_transaksi(row)?;
             transaksi_list.push(transaksi);
         }
         
@@ -136,6 +149,8 @@ impl TransaksiRepository {
     }
 
     pub async fn create_detail_transaksi(mut db: PoolConnection<Any>, detail: &DetailTransaksi) -> Result<DetailTransaksi, sqlx::Error> {
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        
         let result = sqlx::query("
                 INSERT INTO detail_transaksi (id_transaksi, id_produk, harga_satuan, jumlah, subtotal, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -146,20 +161,22 @@ impl TransaksiRepository {
             .bind(detail.harga_satuan)
             .bind(detail.jumlah as i32)
             .bind(detail.subtotal)
-            .bind(DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap().to_string())
-            .bind(DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap().to_string())
+            .bind(&now)
+            .bind(&now)
             .fetch_one(&mut *db)
             .await?;
         
-        let detail = Self::parse_row_to_detail_transaksi(result);
+        let detail = Self::parse_row_to_detail_transaksi(result)?;
         Ok(detail)
     }
 
     pub async fn get_detail_by_transaksi_id(mut db: PoolConnection<Any>, id_transaksi: i32) -> Result<Vec<DetailTransaksi>, sqlx::Error> {
         let rows = sqlx::query("
-                SELECT id, id_transaksi, id_produk, harga_satuan, jumlah, subtotal
+                SELECT id, id_transaksi, id_produk, 
+                       harga_satuan, jumlah, subtotal
                 FROM detail_transaksi
                 WHERE id_transaksi = $1
+                ORDER BY id
             ")
             .bind(id_transaksi)
             .fetch_all(&mut *db)
@@ -167,7 +184,7 @@ impl TransaksiRepository {
         
         let mut detail_list = Vec::new();
         for row in rows {
-            let detail = Self::parse_row_to_detail_transaksi(row);
+            let detail = Self::parse_row_to_detail_transaksi(row)?;
             detail_list.push(detail);
         }
         
@@ -175,6 +192,8 @@ impl TransaksiRepository {
     }
 
     pub async fn update_detail_transaksi(mut db: PoolConnection<Any>, detail: &DetailTransaksi) -> Result<DetailTransaksi, sqlx::Error> {
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        
         let result = sqlx::query("
                 UPDATE detail_transaksi
                 SET id_produk = $1, harga_satuan = $2, jumlah = $3, subtotal = $4, updated_at = $5
@@ -185,12 +204,12 @@ impl TransaksiRepository {
             .bind(detail.harga_satuan)
             .bind(detail.jumlah as i32)
             .bind(detail.subtotal)
-            .bind(DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap().to_string())
+            .bind(&now)
             .bind(detail.id)
             .fetch_one(&mut *db)
             .await?;
         
-        let detail = Self::parse_row_to_detail_transaksi(result);
+        let detail = Self::parse_row_to_detail_transaksi(result)?;
         Ok(detail)
     }
 
@@ -211,34 +230,52 @@ impl TransaksiRepository {
         
         Ok(())
     }
-
-    fn parse_row_to_transaksi(row: AnyRow) -> Transaksi {
-        let status_str: String = row.get("status");
+    
+    fn parse_row_to_transaksi(row: AnyRow) -> Result<Transaksi, sqlx::Error> {
+        let id: i32 = row.try_get("id")?;
+        let id_pelanggan: i32 = row.try_get("id_pelanggan")?;
+        let nama_pelanggan: String = row.try_get("nama_pelanggan")?;
+        let tanggal_transaksi: String = row.try_get("tanggal_transaksi")?;
+        
+        let total_harga: f64 = row.try_get("total_harga")?;
+        
+        let status_str: String = row.try_get("status")?;
         let status = StatusTransaksi::from_string(&status_str).unwrap_or(StatusTransaksi::MasihDiproses);
-
+        
+        let catatan: Option<String> = row.try_get::<Option<String>, _>("catatan").unwrap_or(None);
+        
         let mut transaksi = Transaksi::new(
-            row.get("id_pelanggan"),
-            row.get("nama_pelanggan"),
-            row.get("total_harga"),
-            row.get("catatan"),
+            id_pelanggan,
+            nama_pelanggan,
+            total_harga,
+            catatan,
         );
 
-        transaksi.id = row.get("id");
-        transaksi.tanggal_transaksi = row.get("tanggal_transaksi");
+        transaksi.id = id;
+        transaksi.tanggal_transaksi = tanggal_transaksi;
         transaksi.status = status;
 
-        transaksi
+        Ok(transaksi)
     }
 
-    fn parse_row_to_detail_transaksi(row: AnyRow) -> DetailTransaksi {
-        DetailTransaksi {
-            id: row.get("id"),
-            id_transaksi: row.get("id_transaksi"),
-            id_produk: row.get("id_produk"),
-            harga_satuan: row.get("harga_satuan"),
-            jumlah: row.get::<i32, _>("jumlah") as u32,
-            subtotal: row.get("subtotal"),
-        }
+    fn parse_row_to_detail_transaksi(row: AnyRow) -> Result<DetailTransaksi, sqlx::Error> {
+        let id: i32 = row.try_get("id")?;
+        let id_transaksi: i32 = row.try_get("id_transaksi")?;
+        let id_produk: i32 = row.try_get("id_produk")?;
+        
+        let harga_satuan: f64 = row.try_get("harga_satuan")?;
+        let subtotal: f64 = row.try_get("subtotal")?;
+        
+        let jumlah: u32 = row.try_get::<i32, _>("jumlah")? as u32;
+
+        Ok(DetailTransaksi {
+            id,
+            id_transaksi,
+            id_produk,
+            harga_satuan,
+            jumlah,
+            subtotal,
+        })
     }
 }
 
@@ -364,5 +401,24 @@ mod test {
         assert!(!created.tanggal_transaksi.is_empty());
         
         println!("Created transaksi with simple data types: {:?}", created);
+    }
+
+    #[async_test]
+    async fn test_numeric_string_conversion() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            99,
+            "Numeric Test".to_string(),
+            1234.56,
+            Some("Testing numeric conversion".to_string()),
+        );
+
+        let created = TransaksiRepository::create_transaksi(db.acquire().await.unwrap(), &transaksi).await.unwrap();
+        
+        assert!(created.id > 0);
+        assert_eq!(created.id_pelanggan, 99);
+        assert_eq!(created.nama_pelanggan, "Numeric Test");
+        assert!((created.total_harga - 1234.56).abs() < 0.01);
     }
 }

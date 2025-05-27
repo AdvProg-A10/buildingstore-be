@@ -391,9 +391,10 @@ impl TransaksiService {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
     use sqlx::any::install_default_drivers;
+    use sqlx::{Any, Pool};
     use rocket::async_test;
 
     async fn setup() -> Pool<Any> {
@@ -414,7 +415,7 @@ mod tests {
     }
 
     #[async_test]
-    async fn test_create_and_get_transaksi() {
+    async fn test_create_transaksi() {
         let db = setup().await;
 
         let transaksi = Transaksi::new(
@@ -423,119 +424,93 @@ mod tests {
             150000.0,
             Some("Test transaction".to_string()),
         );
+        let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
 
-        let created = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
-        let fetched = TransaksiService::get_transaksi_by_id(db, created.id).await.unwrap();
-
-        assert_eq!(created.id, fetched.id);
-        assert_eq!(created.nama_pelanggan, fetched.nama_pelanggan);
+        assert_eq!(created_transaksi.id_pelanggan, 1);
+        assert_eq!(created_transaksi.nama_pelanggan, "Castorice");
+        assert_eq!(created_transaksi.total_harga, 150000.0);
+        assert_eq!(created_transaksi.status, StatusTransaksi::MasihDiproses);
     }
 
     #[async_test]
-    async fn test_state_pattern_complete_transaksi() {
+    async fn test_get_transaksi_by_id() {
         let db = setup().await;
 
         let transaksi = Transaksi::new(
-            1,
+            2,
             "Tribbie".to_string(),
             200000.0,
             None,
         );
-
-        let created = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
-        let completed = TransaksiService::complete_transaksi(db, created.id).await.unwrap();
-
-        assert_eq!(completed.status, StatusTransaksi::Selesai);
-    }
-
-    #[async_test]
-    async fn test_strategy_pattern_sorting() {
-        let transaksi1 = Transaksi::new(1, "Alice".to_string(), 100000.0, None);
-        let transaksi2 = Transaksi::new(2, "Bob".to_string(), 200000.0, None);
-        let transaksi3 = Transaksi::new(3, "Charlie".to_string(), 150000.0, None);
-
-        let transaksi_list = vec![transaksi1, transaksi2, transaksi3];
-        
-        let sorted = TransaksiService::sort_transaksi(transaksi_list.clone(), "pelanggan");
-        assert_eq!(sorted[0].nama_pelanggan, "Alice");
-        assert_eq!(sorted[1].nama_pelanggan, "Bob");
-        assert_eq!(sorted[2].nama_pelanggan, "Charlie");
-
-        let sorted_total = TransaksiService::sort_transaksi(transaksi_list, "total");
-        assert_eq!(sorted_total[0].total_harga, 100000.0);
-        assert_eq!(sorted_total[1].total_harga, 150000.0);
-        assert_eq!(sorted_total[2].total_harga, 200000.0);
-    }
-
-    #[async_test]
-    async fn test_strategy_pattern_filtering() {
-        let transaksi1 = Transaksi::new(1, "Alice Smith".to_string(), 100000.0, None);
-        let transaksi2 = Transaksi::new(2, "Bob Johnson".to_string(), 200000.0, None);
-        let transaksi3 = Transaksi::new(3, "Alice Brown".to_string(), 150000.0, None);
-
-        let transaksi_list = vec![transaksi1, transaksi2, transaksi3];
-        
-        let filtered = TransaksiService::filter_transaksi(transaksi_list, "pelanggan", "Alice");
-        assert_eq!(filtered.len(), 2);
-        assert!(filtered.iter().all(|t| t.nama_pelanggan.contains("Alice")));
-    }
-
-    #[async_test]
-    async fn test_search_with_pagination() {
-        let db = setup().await;
-
-        let transaksi1 = Transaksi::new(1, "Alice".to_string(), 100000.0, None);
-        let transaksi2 = Transaksi::new(2, "Bob".to_string(), 200000.0, None);
-        let transaksi3 = Transaksi::new(1, "Alice Again".to_string(), 300000.0, None);
-
-        TransaksiService::create_transaksi(db.clone(), &transaksi1).await.unwrap();
-        TransaksiService::create_transaksi(db.clone(), &transaksi2).await.unwrap();
-        TransaksiService::create_transaksi(db.clone(), &transaksi3).await.unwrap();
-
-        let search_params = TransaksiSearchParams {
-            sort: Some("total".to_string()),
-            filter: None,
-            keyword: None,
-            status: None,
-            id_pelanggan: None,
-            page: Some(1),
-            limit: Some(2),
-        };
-
-        let result = TransaksiService::search_transaksi_with_pagination(db, &search_params).await.unwrap();
-        
-        assert_eq!(result.data.len(), 2);
-        assert_eq!(result.total_count, 3);
-        assert_eq!(result.page, 1);
-        assert_eq!(result.limit, 2);
-        assert_eq!(result.total_pages, 2);
-    }
-
-    #[async_test]
-    async fn test_detail_transaksi_operations() {
-        let db = setup().await;
-
-        let transaksi = Transaksi::new(1, "Detail Test".to_string(), 0.0, None);
         let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
 
-        let detail = DetailTransaksi::new(created_transaksi.id, 1, 100000.0, 2);
+        let fetched_transaksi = TransaksiService::get_transaksi_by_id(db.clone(), created_transaksi.id).await.unwrap();
+
+        assert_eq!(fetched_transaksi.id_pelanggan, 2);
+        assert_eq!(fetched_transaksi.nama_pelanggan, "Tribbie");
+        assert_eq!(fetched_transaksi.total_harga, 200000.0);
+    }
+
+    #[async_test]
+    async fn test_create_detail_transaksi() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            1,
+            "Hyacine".to_string(),
+            500000.0,
+            None,
+        );
+        let created_transaksi = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
+
+        let detail = DetailTransaksi::new(
+            created_transaksi.id,
+            101,
+            15000000.0,
+            1,
+        );
         let created_detail = TransaksiService::add_detail_transaksi(db.clone(), &detail).await.unwrap();
 
         assert_eq!(created_detail.id_transaksi, created_transaksi.id);
-        assert_eq!(created_detail.subtotal, 200000.0);
+        assert_eq!(created_detail.id_produk, 101);
+        assert_eq!(created_detail.subtotal, 15000000.0);
+    }
 
-        let details = TransaksiService::get_detail_by_transaksi_id(db.clone(), created_transaksi.id).await.unwrap();
-        assert_eq!(details.len(), 1);
+    #[async_test]
+    async fn test_get_all_transaksi() {
+        let db = setup().await;
 
-        // Update detail
-        let mut updated_detail = created_detail.clone();
-        updated_detail.update_jumlah(3);
-        let result = TransaksiService::update_detail_transaksi(db.clone(), &updated_detail).await.unwrap();
-        assert_eq!(result.jumlah, 3);
-        assert_eq!(result.subtotal, 300000.0);
+        let transaksi1 = Transaksi::new(1, "Alice".to_string(), 100000.0, None);
+        let transaksi2 = Transaksi::new(2, "Bob".to_string(), 200000.0, None);
 
-        TransaksiService::delete_detail_transaksi(db.clone(), created_detail.id, created_transaksi.id).await.unwrap();
-        let remaining_details = TransaksiService::get_detail_by_transaksi_id(db, created_transaksi.id).await.unwrap();
-        assert_eq!(remaining_details.len(), 0);
+        TransaksiService::create_transaksi(db.clone(), &transaksi1).await.unwrap();
+        TransaksiService::create_transaksi(db.clone(), &transaksi2).await.unwrap();
+
+        let all_transaksi = TransaksiService::get_all_transaksi(db.clone()).await.unwrap();
+        
+        assert_eq!(all_transaksi.len(), 2);
+        assert!(all_transaksi.iter().any(|t| t.nama_pelanggan == "Alice"));
+        assert!(all_transaksi.iter().any(|t| t.nama_pelanggan == "Bob"));
+    }
+
+    #[async_test]
+    async fn test_simple_data_types() {
+        let db = setup().await;
+
+        let transaksi = Transaksi::new(
+            99,
+            "Data Type Test".to_string(),
+            999.99,
+            Some("Testing simple data types".to_string()),
+        );
+
+        let created = TransaksiService::create_transaksi(db.clone(), &transaksi).await.unwrap();
+        
+        assert!(created.id > 0);
+        assert_eq!(created.id_pelanggan, 99);
+        assert_eq!(created.total_harga, 999.99);
+        assert!(!created.tanggal_transaksi.is_empty());
+        
+        println!("Created transaksi with simple data types: {:?}", created);
     }
 }

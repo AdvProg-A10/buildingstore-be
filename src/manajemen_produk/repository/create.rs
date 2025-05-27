@@ -124,9 +124,7 @@ mod tests {
 
         let nama: String = row.get("nama");
         let kategori: String = row.get("kategori");
-        
-        // Handle NULL values properly using try_get
-        let deskripsi: Option<String> = row.try_get("deskripsi").unwrap_or(None);
+        let deskripsi: Option<String> = row.try_get("deskripsi").map_or(None, |v: String| Some(v));
         
         assert_eq!(nama, "Mouse");
         assert_eq!(kategori, "Aksesoris");

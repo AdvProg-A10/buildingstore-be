@@ -51,10 +51,6 @@ pub fn validate_produk(produk: &Produk) -> Result<(), RepositoryError> {
         return Err(RepositoryError::ValidationError("Harga tidak boleh negatif".to_string()));
     }
     
-    if produk.stok < 0 {
-        return Err(RepositoryError::ValidationError("Stok tidak boleh negatif".to_string()));
-    }
-    
     // Validasi panjang string sesuai database constraints
     if produk.nama.len() > 255 {
         return Err(RepositoryError::ValidationError("Nama produk terlalu panjang (maksimal 255 karakter)".to_string()));

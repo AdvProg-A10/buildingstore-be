@@ -22,7 +22,7 @@ pub async fn ambil_semua_produk(pool: &AnyPool) -> Result<Vec<Produk>, Repositor
             row.try_get("kategori")?,
             row.try_get("harga")?,
             row.try_get::<i32, _>("stok")? as u32,
-            deskripsi,
+            row.try_get("deskripsi").map_or(None, |v: String| Some(v)),
         ));
     }
     
@@ -36,22 +36,14 @@ pub async fn ambil_produk_by_id(pool: &AnyPool, id: i64) -> Result<Option<Produk
         .await?;
     
     match row {
-        Some(row) => {
-            // Handle nullable deskripsi dengan cara yang lebih aman
-            let deskripsi: Option<String> = match row.try_get("deskripsi") {
-                Ok(val) => val,
-                Err(_) => None, // Jika error (termasuk NULL), set ke None
-            };
-            
-            Ok(Some(Produk::with_id(
-                row.try_get("id")?,
-                row.try_get("nama")?,
-                row.try_get("kategori")?,
-                row.try_get("harga")?,
-                row.try_get::<i32, _>("stok")? as u32,
-                deskripsi,
-            )))
-        },
+        Some(row) => Ok(Some(Produk::with_id(
+            row.try_get("id")?,
+            row.try_get("nama")?,
+            row.try_get("kategori")?,
+            row.try_get("harga")?,
+            row.try_get::<i32, _>("stok")? as u32,
+            row.try_get("deskripsi").map_or(None, |v: String| Some(v)),
+        ))),
         None => Ok(None),
     }
 }
