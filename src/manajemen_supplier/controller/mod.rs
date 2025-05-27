@@ -1,5 +1,4 @@
 use rocket::fairing::AdHoc;
-use rocket::routes;
 use sqlx::{Any, Pool};
 use std::sync::Arc;
 
@@ -44,18 +43,10 @@ pub fn route_stage() -> AdHoc {
             ));
 
         supplier_dispatcher_instance.register(transaction_logger_observer);
-        eprintln!("[SETUP DEBUG] SupplierTransactionLogger registered with SupplierDispatcher.");
 
         rocket
             .manage(supplier_service_instance)
             .manage(supplier_dispatcher_instance as Arc<dyn SupplierNotifier>)
-            .mount("/api", routes![
-                supplier_controller::save_supplier,
-                supplier_controller::delete_supplier,
-                supplier_controller::get_supplier,
-                supplier_controller::update_supplier,
-                supplier_controller::get_all_suppliers,
-                supplier_controller::get_all_supplier_transactions
-            ])
+            .mount("/api", supplier_controller::supplier_routes())
     })
 }

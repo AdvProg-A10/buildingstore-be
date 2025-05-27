@@ -33,11 +33,12 @@ pub async fn save_supplier(
     db_pool: &State<Pool<Any>>,
     service: &State<Arc<dyn SupplierService>>,
 ) -> (Status, Json<ApiResponse<Supplier>>) {
+    let jumlah_barang: i32 = if request_data.jumlah_barang < 0 { 0 } else { request_data.jumlah_barang as i32 };
     match service.inner().save_supplier(
         db_pool.inner().clone(),
         request_data.name.clone(),
         request_data.jenis_barang.clone(),
-        request_data.jumlah_barang,
+        jumlah_barang,
         request_data.resi.clone(),
     ).await {
         Ok(saved_supplier) => {
@@ -51,7 +52,6 @@ pub async fn save_supplier(
             )
         }
         Err(service_error_msg) => {
-            eprintln!("[Controller Error] Save supplier failed: {}", service_error_msg);
             (
                 Status::InternalServerError,
                 Json(ApiResponse {
@@ -84,12 +84,11 @@ pub async fn get_supplier(
             Status::NotFound,
             Json(ApiResponse {
                 success: false,
-                message: Some(format!("Supplier with ID '{}' not found.", suppliers_id)),
+                message: Some(format!("Supplier with ID '{suppliers_id}' not found.")),
                 data: None::<Supplier>,
             }),
         ),
         Err(service_error_msg) => {
-            eprintln!("[Controller Error] Get supplier failed for ID '{}': {}", suppliers_id, service_error_msg);
             (
                 Status::InternalServerError,
                 Json(ApiResponse {
@@ -131,23 +130,21 @@ pub async fn update_supplier(
                     )
                 }
                 Ok(None) => {
-                    eprintln!("[Controller Error] Supplier {} not found after update operation (was it deleted concurrently?).", id);
                     (
                         Status::NotFound,
                         Json(ApiResponse {
                             success: false,
-                            message: Some(format!("Supplier with ID '{}' not found after update.", id)),
+                            message: Some(format!("Supplier with ID '{id}' not found after update.")),
                             data: None::<Supplier>,
                         }),
                     )
                 }
                 Err(e) => {
-                    eprintln!("[Controller Error] Failed to fetch supplier {} after update: {}", id, e);
                     (
                         Status::InternalServerError,
                         Json(ApiResponse {
                             success: false,
-                            message: Some(format!("Error fetching supplier after update: {}", e)),
+                            message: Some(format!("Error fetching supplier after update: {e}")),
                             data: None::<Supplier>,
                         }),
                     )
@@ -155,7 +152,6 @@ pub async fn update_supplier(
             }
         }
         Err(service_error_msg) => {
-            eprintln!("[Controller Error] Update supplier failed for ID '{}': {}", id, service_error_msg);
             let status_code = if service_error_msg.to_lowercase().contains("not found") {
                 Status::NotFound
             } else {
@@ -186,13 +182,12 @@ pub async fn delete_supplier(
                 Status::Ok,
                 Json(ApiResponse {
                     success: true,
-                    message: Some(format!("Supplier with ID '{}' deleted successfully.", id)),
+                    message: Some(format!("Supplier with ID '{id}' deleted successfully.")),
                     data: None::<()>,
                 }),
             )
         }
         Err(service_error_msg) => {
-            eprintln!("[Controller Error] Delete supplier failed for ID '{}': {}", id, service_error_msg);
             let status_code = if service_error_msg.to_lowercase().contains("not found") {
                 Status::NotFound
             } else {
@@ -226,7 +221,6 @@ pub async fn get_all_suppliers(
             }),
         ),
         Err(service_error_msg) => {
-            eprintln!("[Controller Error] Get all suppliers failed: {}", service_error_msg);
             (
                 Status::InternalServerError,
                 Json(ApiResponse {
@@ -255,7 +249,6 @@ pub async fn get_all_supplier_transactions(
             }),
         ),
         Err(service_error_msg) => {
-            eprintln!("[Controller Error] Get all supplier transactions failed: {}", service_error_msg);
             (
                 Status::InternalServerError,
                 Json(ApiResponse {
@@ -267,7 +260,6 @@ pub async fn get_all_supplier_transactions(
         }
     }
 }
-
 
 pub fn supplier_routes() -> Vec<rocket::Route> {
     routes![
@@ -314,29 +306,28 @@ mod tests {
 
     fn create_test_transaction_model(supplier: &Supplier) -> SupplierTransaction {
         SupplierTransaction {
-            id: format!("TRX-INTEG-{}", Uuid::new_v4()),
+            id: format!("TRX-INTEG-{}", Uuid::new_v4()), 
             supplier_id: supplier.id.clone(),
             supplier_name: supplier.name.clone(),
             jenis_barang: supplier.jenis_barang.clone(),
             jumlah_barang: supplier.jumlah_barang,
-            pengiriman_info: format!("Integ Test Info for {}", supplier.resi.clone()),
+            pengiriman_info: format!("Integ Test Info for {supplier_resi}", supplier_resi = supplier.resi),
             tanggal_transaksi: Utc::now().to_rfc3339(),
         }
     }
-
 
 async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
     install_default_drivers();
 
     let unique_db_id = Uuid::new_v4().simple().to_string();
-    let db_connection_string = format!("sqlite:file:memtest_{}?mode=memory&cache=shared", unique_db_id);
+    let db_connection_string = format!("sqlite:file:memtest_{unique_db_id}?mode=memory&cache=shared");
 
     let db_pool = AnyPoolOptions::new()
         .max_connections(5) 
         .acquire_timeout(std::time::Duration::from_secs(10))
         .connect(&db_connection_string)
         .await
-        .expect(&format!("Failed to connect to unique test in-memory SQLite DB: {}", db_connection_string));
+        .expect(&format!("Failed to connect to unique test in-memory SQLite DB: {db_connection_string}"));
 
 
     sqlx::migrate!("migrations/test")
@@ -370,10 +361,10 @@ async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
 
     fn sample_supplier_request(name_suffix: &str) -> SupplierRequest {
         SupplierRequest {
-            name: format!("Integ Test Supplier {}", name_suffix),
+            name: format!("Integ Test Supplier {name_suffix}"),
             jenis_barang: "Integration Goods".to_string(),
             jumlah_barang: 150,
-            resi: format!("INTEG-RESI-{}", name_suffix),
+            resi: format!("INTEG-RESI-{name_suffix}"),
         }
     }
 
@@ -415,7 +406,7 @@ async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
         let rocket_instance = setup_rocket_instance_for_supplier_tests().await;
         let client = Client::tracked(rocket_instance).await.expect("Valid Rocket instance");
 
-        let non_existent_id = format!("SUP-INTEG-{}", Uuid::new_v4());
+        let non_existent_id = format!("SUP-INTEG-{}", Uuid::new_v4()); // Expression, not a simple var
         let response = client.get(uri!(get_supplier(suppliers_id = non_existent_id))).dispatch().await;
 
         assert_eq!(response.status(), Status::NotFound);
@@ -549,16 +540,17 @@ async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
         let created_supplier = deserialize_response_body::<Supplier>(post_supplier_resp).await.data.unwrap();
 
         let transaction_repo_direct = SupplierTransactionRepositoryImpl::new();
-
+        
         let transaction1 = create_test_transaction_model(&created_supplier);
         let transaction1_id = transaction1.id.clone();
         let conn1 = db_pool_for_seeding.acquire().await.unwrap();
-        transaction_repo_direct.save(transaction1, conn1).await.expect("Failed to save transaction1 for test");
+        transaction_repo_direct.save(transaction1, conn1).await.expect("Failed to save transaction1 for test"); 
 
         let transaction2 = create_test_transaction_model(&created_supplier);
         let transaction2_id = transaction2.id.clone();
-        let conn2 = db_pool_for_seeding.acquire().await.unwrap();
+        let conn2 = db_pool_for_seeding.acquire().await.unwrap(); 
         transaction_repo_direct.save(transaction2, conn2).await.expect("Failed to save transaction2 for test");
+
 
         let response = client.get(uri!(get_all_supplier_transactions)).dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -567,6 +559,7 @@ async fn setup_rocket_instance_for_supplier_tests() -> Rocket<rocket::Build> {
         assert!(api_resp.success);
         let transactions = api_resp.data.expect("Data should be present");
         assert_eq!(transactions.len(), 2);
+
 
         assert!(transactions.iter().any(|t| t.id == transaction1_id));
         assert!(transactions.iter().any(|t| t.id == transaction2_id));

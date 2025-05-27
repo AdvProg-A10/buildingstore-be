@@ -98,16 +98,14 @@ impl SupplierService for SupplierServiceImpl {
         let conn = match db_pool.acquire().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Service Error] Failed to acquire DB connection for get_supplier (ID: {}): {}", id, e);
-                return Err(format!("Service: Failed to acquire DB connection: {}", e));
+                return Err(format!("Service: Failed to acquire DB connection: {e}"));
             }
         };
         match self.supplier_repo.find_by_id(id, conn).await {
             Ok(s) => Ok(Some(s)),
             Err(SqlxError::RowNotFound) => Ok(None),
             Err(e) => {
-                eprintln!("[Service Error] Repository error fetching supplier by ID '{}': {}", id, e);
-                Err(format!("Service: Repository error: {}", e))
+                return Err(format!("Service: Repository error: {e}"));
             }
         }
     }
@@ -116,16 +114,14 @@ impl SupplierService for SupplierServiceImpl {
         let conn = match db_pool.acquire().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Service Error] Failed to acquire DB connection for get all supplier");
-                return Err(format!("Service: Failed to acquire DB connection: {}", e));
+                return Err(format!("Service: Failed to acquire DB connection: {e}"));
             }
         };
 
         match self.supplier_repo.find_all(conn).await {
             Ok(s) => Ok(s),
             Err(e) => {
-                eprintln!("[Service Error] Repository error fetching all suppliers: {}", e);
-                Err(format!("Service: Repository error: {}", e))
+                return Err(format!("Service: Repository error: {e}"));
             }
         }
     }
@@ -134,16 +130,14 @@ impl SupplierService for SupplierServiceImpl {
         let conn = match db_pool.acquire().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Service Error] Failed to acquire DB connection for get all supplier transaction");
-                return Err(format!("Service: Failed to acquire DB connection: {}", e));
+                return Err(format!("Service: Failed to acquire DB connection: {e}"));
             }
         };
 
         match self.transaction_repo.find_all(conn).await {
             Ok(s) => Ok(s),
             Err(e) => {
-                eprintln!("[Service Error] Repository error fetching all suppliers: {}", e);
-                Err(format!("Service: Repository error: {}", e))
+                return Err(format!("Service: Repository error: {e}"))
             }
         }
     }
