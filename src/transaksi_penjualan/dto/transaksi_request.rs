@@ -40,35 +40,23 @@ pub struct TransaksiWithDetailsResponse {
     pub detail_transaksi: Vec<DetailTransaksi>,
 }
 
-impl CreateDetailTransaksiRequest {
-    pub fn to_detail_transaksi(&self, id_transaksi: i32, harga_satuan: f64) -> DetailTransaksi {
-        DetailTransaksi::new(
-            id_transaksi,
-            self.id_produk,
-            harga_satuan,
-            self.jumlah,
-        )
-    }
-}
-
 impl CreateTransaksiRequest {
     pub fn validate(&self) -> Result<(), String> {
         if self.nama_pelanggan.trim().is_empty() {
-            return Err("Nama pelanggan tidak boleh kosong".to_string());
-        }
-        if self.detail_transaksi.is_empty() {
-            return Err("Detail transaksi tidak boleh kosong".to_string());
+            return Err("Customer name cannot be empty".to_string());
         }
 
-        for (i, detail) in self.detail_transaksi.iter().enumerate() {
-            if detail.jumlah == 0 {
-                return Err(format!("Jumlah produk di indeks {} tidak boleh 0", i));
-            }
-            if detail.id_produk <= 0 {
-                return Err(format!("ID produk di indeks {} tidak valid", i));
-            }
-            if detail.harga_satuan < 0.0 {
-                return Err(format!("Harga satuan di indeks {} tidak boleh negatif", i));
+        if self.id_pelanggan <= 0 {
+            return Err("Invalid customer ID".to_string());
+        }
+
+        if self.detail_transaksi.is_empty() {
+            return Err("Transaction must have at least one product".to_string());
+        }
+
+        for (index, detail) in self.detail_transaksi.iter().enumerate() {
+            if let Err(err) = detail.validate() {
+                return Err(format!("Detail {}: {}", index + 1, err));
             }
         }
 
@@ -76,10 +64,44 @@ impl CreateTransaksiRequest {
     }
 
     pub fn calculate_total(&self, product_prices: &HashMap<i32, f64>) -> f64 {
-        self.detail_transaksi.iter().map(|d| {
-            let harga = product_prices.get(&d.id_produk).unwrap_or(&0.0);
-            *harga * d.jumlah as f64
-        }).sum()
+        self.detail_transaksi
+            .iter()
+            .map(|detail| {
+                let price = product_prices.get(&detail.id_produk).unwrap_or(&detail.harga_satuan);
+                price * detail.jumlah as f64
+            })
+            .sum()
+    }
+}
+
+impl CreateDetailTransaksiRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.nama_produk.trim().is_empty() {
+            return Err("Product name cannot be empty".to_string());
+        }
+
+        if self.id_produk <= 0 {
+            return Err("Invalid product ID".to_string());
+        }
+
+        if self.jumlah == 0 {
+            return Err("Quantity must be greater than 0".to_string());
+        }
+
+        if self.harga_satuan < 0.0 {
+            return Err("Unit price cannot be negative".to_string());
+        }
+
+        Ok(())
+    }
+
+    pub fn to_detail_transaksi(&self, id_transaksi: i32, harga_satuan: f64) -> DetailTransaksi {
+        DetailTransaksi::new(
+            id_transaksi,
+            self.id_produk,
+            harga_satuan,
+            self.jumlah,
+        )
     }
 }
 

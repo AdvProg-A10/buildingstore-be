@@ -46,10 +46,10 @@ async fn rocket() -> _ {
     install_default_drivers();
     let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let db_pool = sqlx::AnyPool::connect(&database_url).await.unwrap();
-    sqlx::migrate!()
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");    
+    //sqlx::migrate!()
+    //   .run(&db_pool)
+    //    .await
+    //    .expect("Failed to run migrations");    
 
     rocket::build()
         .manage(reqwest::Client::builder().build().unwrap())

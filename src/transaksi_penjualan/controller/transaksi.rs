@@ -50,7 +50,7 @@ pub async fn get_all_transaksi(
         Ok(result) => {
             Ok(Json(result.data))
         }
-        Err(e) => {
+        Err(_e) => {
             Err((Status::InternalServerError, Json(Response { 
                 message: "Failed to fetch transaksi".to_string() 
             })))
@@ -64,6 +64,18 @@ pub async fn create_transaksi(
     db: &State<Pool<Any>>, 
     request: Json<crate::transaksi_penjualan::dto::transaksi_request::CreateTransaksiRequest>
 ) -> Result<Json<Response>, (Status, Json<Response>)> {
+    if let Err(err_msg) = request.validate() {
+        return Err((Status::BadRequest, Json(Response { 
+            message: format!("Validation error: {}", err_msg)
+        })));
+    }
+
+    if let Err(err_msg) = TransaksiService::validate_product_stock(&request.detail_transaksi).await {
+        return Err((Status::BadRequest, Json(Response { 
+            message: format!("Stock error: {}", err_msg)
+        })));
+    }
+
     match TransaksiService::create_transaksi_with_details(db.inner().clone(), &request).await {
         Ok(_new_transaksi) => {
             Ok(Json(Response { message: "Transaksi created successfully".to_string() }))
@@ -75,9 +87,14 @@ pub async fn create_transaksi(
                         message: "Validation error or insufficient stock".to_string() 
                     })))
                 }
+                sqlx::Error::Database(ref _db_err) => {
+                    Err((Status::InternalServerError, Json(Response { 
+                        message: "Database error occurred".to_string() 
+                    })))
+                }
                 _ => {
                     Err((Status::InternalServerError, Json(Response { 
-                        message: "Failed to create transaksi".to_string() 
+                        message: "Failed to create transaction".to_string() 
                     })))
                 }
             }

@@ -100,7 +100,6 @@ impl TransaksiState for DibatalkanState {
     }
 }
 
-// Factory untuk membuat state
 pub struct TransaksiStateFactory;
 
 impl TransaksiStateFactory {
@@ -110,5 +109,90 @@ impl TransaksiStateFactory {
             StatusTransaksi::Selesai => Box::new(SelesaiState),
             StatusTransaksi::Dibatalkan => Box::new(DibatalkanState),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_state_permissions() {
+        let processing_state = MasihDiprosesState;
+        assert!(processing_state.can_be_modified());
+        assert!(processing_state.can_be_cancelled());
+        assert!(processing_state.can_be_completed());
+        assert!(processing_state.can_add_items());
+
+        let completed_state = SelesaiState;
+        assert!(!completed_state.can_be_modified());
+        assert!(!completed_state.can_be_cancelled());
+        assert!(!completed_state.can_be_completed());
+        assert!(!completed_state.can_add_items());
+
+        let cancelled_state = DibatalkanState;
+        assert!(!cancelled_state.can_be_modified());
+        assert!(!cancelled_state.can_be_cancelled());
+        assert!(!cancelled_state.can_be_completed());
+        assert!(!cancelled_state.can_add_items());
+    }
+
+    #[test]
+    fn test_state_transitions() {
+        let processing_state = MasihDiprosesState;
+
+        let completed = processing_state.next_state(StateAction::Complete).unwrap();
+        assert_eq!(completed.status(), StatusTransaksi::Selesai);
+
+        let cancelled = processing_state.next_state(StateAction::Cancel).unwrap();
+        assert_eq!(cancelled.status(), StatusTransaksi::Dibatalkan);
+
+        let result = processing_state.next_state(StateAction::Reopen);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_state_factory() {
+        let masih_diproses = TransaksiStateFactory::create_state(&StatusTransaksi::MasihDiproses);
+        assert!(masih_diproses.can_be_modified());
+
+        let selesai = TransaksiStateFactory::create_state(&StatusTransaksi::Selesai);
+        assert!(!selesai.can_be_modified());
+
+        let dibatalkan = TransaksiStateFactory::create_state(&StatusTransaksi::Dibatalkan);
+        assert!(!dibatalkan.can_be_modified());
+    }
+
+    #[test]
+    fn test_state_workflow() {
+        let mut current_state = TransaksiStateFactory::create_state(&StatusTransaksi::MasihDiproses);
+        assert!(current_state.can_be_modified());
+
+        current_state = current_state.next_state(StateAction::Complete).unwrap();
+        assert_eq!(current_state.status(), StatusTransaksi::Selesai);
+        assert!(!current_state.can_be_modified());
+
+        current_state = current_state.next_state(StateAction::Reopen).unwrap();
+        assert_eq!(current_state.status(), StatusTransaksi::MasihDiproses);
+        assert!(current_state.can_be_modified());
+
+        current_state = current_state.next_state(StateAction::Cancel).unwrap();
+        assert_eq!(current_state.status(), StatusTransaksi::Dibatalkan);
+        assert!(!current_state.can_be_modified());
+    }
+
+    #[test]
+    fn test_allowed_actions() {
+        let processing_state = MasihDiprosesState;
+        let actions = processing_state.get_allowed_actions();
+        assert!(actions.contains(&"complete".to_string()));
+        assert!(actions.contains(&"cancel".to_string()));
+        assert!(actions.contains(&"add_item".to_string()));
+
+        let completed_state = SelesaiState;
+        let actions = completed_state.get_allowed_actions();
+        assert!(actions.contains(&"print_receipt".to_string()));
+        assert!(actions.contains(&"view_details".to_string()));
+        assert!(!actions.contains(&"complete".to_string()));
     }
 }
