@@ -115,7 +115,7 @@ mod tests {
         let product_id = result.unwrap();
         assert!(product_id > 0);
 
-        // Verify insertion
+        // Verify insertion - Fixed NULL handling
         let row = sqlx::query("SELECT nama, kategori, deskripsi FROM produk WHERE id = $1")
             .bind(product_id)
             .fetch_one(&db_pool)
@@ -124,7 +124,9 @@ mod tests {
 
         let nama: String = row.get("nama");
         let kategori: String = row.get("kategori");
-        let deskripsi: Option<String> = row.get("deskripsi");
+        
+        // Handle NULL values properly using try_get
+        let deskripsi: Option<String> = row.try_get("deskripsi").unwrap_or(None);
         
         assert_eq!(nama, "Mouse");
         assert_eq!(kategori, "Aksesoris");

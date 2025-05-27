@@ -7,7 +7,7 @@ use sqlx::any::install_default_drivers;
 use autometrics::prometheus_exporter;
 
 pub mod auth;
-// pub mod manajemen_produk;
+pub mod manajemen_produk;
 pub mod manajemen_pelanggan;
 pub mod manajemen_pembayaran;
 pub mod transaksi_penjualan;
@@ -62,6 +62,6 @@ async fn rocket() -> _ {
         .attach(manajemen_pembayaran::controller::route_stage())
         .attach(transaksi_penjualan::controller::route_stage())
         .attach(manajemen_supplier::controller::route_stage())
-        // .attach(manajemen_produk::controller::route_stage())
+        .attach(manajemen_produk::controller::route_stage())
         .mount("/", routes![index, metrics])
 }
