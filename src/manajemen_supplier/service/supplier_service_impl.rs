@@ -499,4 +499,30 @@ mod tests {
         assert!(err_msg.starts_with("Service: Failed to acquire DB connection:"));
         assert!(err_msg.contains("closed pool"));
     }
+
+    #[tokio::test]
+    async fn test_get_all_supplier_transactions_repository_generic_error() {
+        let mock_supplier_repo_concrete = MockSupplierRepository::new();
+        let mock_notifier_concrete = MockSupplierNotifier::new();
+        let mut mock_transaction_repo_concrete = MockSupplierTransactionRepository::new();
+
+        mock_transaction_repo_concrete.expect_find_all()
+            .times(1)
+            .returning(|_conn: PoolConnection<Any>| {
+                Err(SqlxError::PoolTimedOut)
+            });
+
+        let service = SupplierServiceImpl::new(
+            Arc::new(mock_supplier_repo_concrete),
+            Arc::new(mock_transaction_repo_concrete),
+            Arc::new(mock_notifier_concrete)
+        );
+        let pool = create_dummy_pool().await;
+        let result = service.get_all_supplier_transactions(pool).await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.starts_with("Service: Repository error:"));
+        assert!(err_msg.contains("timed out while waiting for a connection from the pool") || err_msg.contains("Repository error: pool timed out"), "Error message was: {}", err_msg);
+    }
 }
