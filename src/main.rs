@@ -47,7 +47,7 @@ async fn rocket() -> _ {
     let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let db_pool = sqlx::AnyPool::connect(&database_url).await.unwrap();
     sqlx::migrate!()
-       .run(&db_pool)
+        .run(&db_pool)
         .await
         .expect("Failed to run migrations");    
 
