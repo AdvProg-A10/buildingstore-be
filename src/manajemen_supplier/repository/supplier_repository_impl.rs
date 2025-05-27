@@ -168,33 +168,32 @@ mod tests {
         assert_eq!(saved_supplier.name, "PT. Ayam");
     }
 
-    #[tokio::test]
-    async fn test_find_supplier_by_id() {
-        let (repository, db_pool) = setup_repository().await;
-        let supplier_id = format!("SUP-{}", Uuid::new_v4());
+#[tokio::test]
+async fn test_find_supplier_by_id() {
+    let (repository, db_pool) = setup_repository().await;
+    let supplier_id = format!("SUP-{}", Uuid::new_v4());
 
-        let supplier = Supplier {
-            id: supplier_id.clone(),
-            name: "PT. Ayam".to_string(),
-            jenis_barang: "ayam".to_string(),
-            jumlah_barang: 1000,
-            resi: "2306206282".to_string(),
-            updated_at: Utc::now().to_rfc3339(),
-        };
+    let supplier = Supplier {
+        id: supplier_id.clone(),
+        name: "PT. Ayam".to_string(),
+        jenis_barang: "ayam".to_string(),
+        jumlah_barang: 1000,
+        resi: "2306206282".to_string(),
+        updated_at: Utc::now().to_rfc3339(),
+    };
 
-        let db_conn = db_pool.acquire().await.unwrap();
-        repository.save(supplier.clone(), db_conn).await.unwrap();
+    let db_conn = db_pool.acquire().await.unwrap();
+    repository.save(supplier.clone(), db_conn).await.unwrap();
 
-        let db_conn = db_pool.acquire().await.unwrap();
-        let result = repository.find_by_id(&supplier_id, db_conn).await;
-        if let Err(e) = &result {
-        eprintln!("Test failure - error: {:?}", e);
+    let db_conn = db_pool.acquire().await.unwrap();
+    let result = repository.find_by_id(&supplier_id, db_conn).await;
+
+    let found_supplier = result.expect(&format!(
+        "Failed to find supplier by ID '{}', which was expected to exist.",
+        supplier_id
+    ));
+    assert_eq!(found_supplier.id, supplier_id);
 }
-
-        assert!(result.is_ok());
-        let found_supplier = result.unwrap();
-        assert_eq!(found_supplier.id, supplier_id);
-    }
 
     #[tokio::test]
     async fn test_find_nonexistent_supplier() {
