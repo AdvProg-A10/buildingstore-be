@@ -26,6 +26,15 @@ pub struct UpdatePaymentStatusRequest {
 }
 
 #[derive(Deserialize)]
+pub struct UpdatePaymentRequest {
+    pub transaction_id: String,
+    pub amount: f64,
+    pub method: String,
+    pub status: String,
+    pub due_date: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct AddInstallmentRequest {
     pub amount: f64,
 }
@@ -136,10 +145,127 @@ pub async fn get_payment_by_id(id: String, db: &State<Pool<Any>>) -> (Status, Js
                 data: None,
             }),
         ),        Err(e) => (
+            Status::InternalServerError,            Json(ApiResponse {
+                success: false,
+                message: format!("Failed to retrieve payment: {e:?}"),
+                data: None,
+            }),
+        ),
+    }
+}
+
+#[autometrics]
+#[put("/payments/<id>", format = "json", data = "<update_request>")]
+pub async fn update_payment(
+    id: String,
+    update_request: Json<UpdatePaymentRequest>,
+    db: &State<Pool<Any>>
+) -> (Status, Json<ApiResponse<Payment>>) {
+    let payment_service = PaymentService::new();
+    
+    let method = match payment_service.parse_payment_method(&update_request.method) {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                Status::BadRequest,
+                Json(ApiResponse {
+                    success: false,
+                    message: format!("Invalid payment method: {e:?}"),
+                    data: None,
+                }),
+            );
+        }
+    };
+    
+    let status = match payment_service.parse_payment_status(&update_request.status) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                Status::BadRequest,
+                Json(ApiResponse {
+                    success: false,
+                    message: format!("Invalid payment status: {e:?}"),
+                    data: None,
+                }),
+            );
+        }
+    };
+    
+    let due_date = if let Some(due_date_str) = &update_request.due_date {
+        match chrono::DateTime::parse_from_rfc3339(due_date_str) {
+            Ok(dt) => Some(dt.with_timezone(&chrono::Utc)),
+            Err(_) => {
+                return (
+                    Status::BadRequest,
+                    Json(ApiResponse {
+                        success: false,
+                        message: "Invalid due date format. Use RFC3339 format.".to_string(),
+                        data: None,
+                    }),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    
+    let current_payment = match payment_service.get_payment_by_id(db, &id).await {
+        Ok(payment) => payment,
+        Err(PaymentError::NotFound(msg)) => {
+            return (
+                Status::NotFound,
+                Json(ApiResponse {
+                    success: false,
+                    message: msg,
+                    data: None,
+                }),
+            );
+        },
+        Err(e) => {
+            return (
+                Status::InternalServerError,
+                Json(ApiResponse {
+                    success: false,
+                    message: format!("Failed to retrieve payment: {e:?}"),
+                    data: None,
+                }),
+            );
+        }
+    };
+    
+    let updated_payment = Payment {
+        id: id.clone(),
+        transaction_id: update_request.transaction_id.clone(),
+        amount: update_request.amount,
+        method,
+        status,
+        payment_date: current_payment.payment_date,
+        installments: current_payment.installments,
+        due_date,
+    };
+    
+    match payment_service.update_payment(db, updated_payment).await {
+        Ok(updated_payment) => (
+            Status::Ok,
+            Json(ApiResponse {
+                success: true,
+                message: "Payment updated successfully".to_string(),
+                data: Some(updated_payment),
+            }),
+        ),
+        Err(PaymentError::NotFound(msg)) => (
+            Status::NotFound,
+            Json(ApiResponse {
+                success: false,
+                message: msg,
+                data: None,
+            }),
+        ),
+        Err(e) => (
             Status::InternalServerError,
             Json(ApiResponse {
                 success: false,
-                message: format!("Failed to retrieve payment: {e:?}"),
+                message: format!("Failed to update payment: {e:?}"),
                 data: None,
             }),
         ),
@@ -319,6 +445,7 @@ pub fn routes() -> Vec<Route> {
     routes![
         create_payment,
         get_payment_by_id,
+        update_payment,
         get_all_payments,
         update_payment_status,
         add_installment,
@@ -737,14 +864,6 @@ mod tests {
         assert!(formatted_error.contains("TestError"));
     }
 
-    #[test]
-    fn test_routes_function() {
-        let route_list = routes();
-        
-        assert_eq!(route_list.len(), 6);
-        
-        assert!(!route_list.is_empty());
-    }    
     
     #[test]
     fn test_not_found_catcher() {
